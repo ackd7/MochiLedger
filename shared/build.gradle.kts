@@ -37,7 +37,6 @@ kotlin {
             api(libs.miuix.preference)
             api(libs.miuix.icons)
             api(libs.miuix.squircle)
-            api(libs.miuix.blur)
             api(libs.kotlinx.coroutines.core)
             api(libs.kotlinx.serialization.json)
             api(libs.kotlinx.datetime)
