@@ -201,12 +201,64 @@ data class MonthlySummary(
     val dailyExpenseCents: Map<Int, Long>,
 )
 
+data class ChangelogEntry(
+    val version: String,
+    val title: String,
+    val changes: List<String>,
+)
+
 object AppInfo {
-    const val VERSION_NAME = "1.0.3"
+    const val VERSION_NAME = "1.0.4"
     const val GITHUB_OWNER = "ackd7"
     const val GITHUB_REPO = "MochiLedger"
     const val GITHUB_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO"
     const val RELEASES_API_URL = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
+    const val RELEASES_LATEST_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
+
+    val CHANGELOG: List<ChangelogEntry> = listOf(
+        ChangelogEntry(
+            version = "v1.0.4",
+            title = "无边框窗口 · 扁平矢量图标 · 快捷日期选择 · 更新日志",
+            changes = listOf(
+                "电脑端移除原生标题栏，窗口最小化/最大化/关闭按钮融入 UI 顶部并支持拖拽",
+                "电脑端「同步」与手机端「自动记账 / 同步」统一收纳进设置二级菜单",
+                "Windows 与 Android 全端图标重构为统一扁平化矢量图标",
+                "统计页面右上角支持点击弹出快捷年份/月份选择器",
+                "修复版本更新检查失效问题，新增 GitHub Redirect 兜底并在软件内提供更新日志",
+            ),
+        ),
+        ChangelogEntry(
+            version = "v1.0.3",
+            title = "纯净初始化 · 多源去重同步 · 悬浮底栏 · 三架构 APK",
+            changes = listOf(
+                "全新安装不再预置示例账单与初始资产余额",
+                "同步设置改为二级入口，支持 WebDAV 与自建服多源联合同步与重复项去重",
+                "账单主页改为右下角悬浮「+」记账按钮，手机端升级悬浮胶囊底栏",
+                "Android 新增 universal / arm64-v8a / armeabi-v7a 三架构分包",
+            ),
+        ),
+        ChangelogEntry(
+            version = "v1.0.2",
+            title = "Windows 运行时修复",
+            changes = listOf(
+                "补齐 jlink 运行时 java.sql 与 jdk.crypto.ec 模块，修复 SQLite 与 HTTPS 同步",
+            ),
+        ),
+        ChangelogEntry(
+            version = "v1.0.1",
+            title = "Windows NSIS 安装包",
+            changes = listOf(
+                "新增 Windows NSIS 图形安装程序（支持中文向导、快捷方式与卸载保留数据）",
+            ),
+        ),
+        ChangelogEntry(
+            version = "v1.0.0",
+            title = "墨记 MochiLedger 首个开源版本",
+            changes = listOf(
+                "Windows + Android 跨端记账、WebDAV / 独立自建同步服务端、LSPosed 微信/支付宝自动记账",
+            ),
+        ),
+    )
 }
 
 object DefaultLedgerSeed {

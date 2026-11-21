@@ -160,9 +160,10 @@ fun TransactionRow(
                 .background(catColor.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = categoryEmoji(category?.iconKey ?: "tag"),
-                fontSize = 19.sp,
+            FlatIcon(
+                name = category?.iconKey ?: "tag",
+                tint = catColor,
+                size = 20.dp,
             )
         }
         Spacer(Modifier.width(12.dp))

@@ -173,8 +173,11 @@ object LedgerMerger {
 }
 
 object GitHubUpdateChecker {
+    private val tagRegex = Regex("""/releases/tag/v?([0-9]+(?:\.[0-9]+)*)""", RegexOption.IGNORE_CASE)
+
     fun checkLatest(): UpdateCheckResult {
-        return runCatching {
+        // Primary: GitHub Releases API (gives release notes + tag)
+        val apiAttempt = runCatching {
             val resp = PlatformBridge.httpRequest(
                 method = "GET",
                 url = AppInfo.RELEASES_API_URL,
@@ -182,31 +185,65 @@ object GitHubUpdateChecker {
                     "Accept" to "application/vnd.github+json",
                     "User-Agent" to "MochiLedger/${AppInfo.VERSION_NAME}",
                 ),
+                connectTimeoutMs = 8_000,
+                readTimeoutMs = 10_000,
             )
-            if (!resp.isSuccessful) {
-                return UpdateCheckResult(
-                    success = false,
-                    message = "检查更新失败（HTTP ${resp.statusCode}）",
-                )
+            if (resp.isSuccessful && resp.body.isNotBlank()) {
+                val dto = LedgerJson.codec.decodeFromString<GitHubReleaseDto>(resp.body)
+                val latestClean = dto.tagName.trim().removePrefix("v").removePrefix("V")
+                if (latestClean.isNotBlank()) {
+                    val hasNewer = compareVersions(latestClean, AppInfo.VERSION_NAME) > 0
+                    return@runCatching UpdateCheckResult(
+                        success = true,
+                        hasUpdate = hasNewer,
+                        currentVersion = AppInfo.VERSION_NAME,
+                        latestVersion = latestClean,
+                        releaseUrl = dto.htmlUrl.ifBlank { "${AppInfo.GITHUB_URL}/releases/tag/v$latestClean" },
+                        releaseNotes = dto.body.take(500),
+                        message = if (hasNewer) {
+                            "发现新版本 v$latestClean（当前 v${AppInfo.VERSION_NAME}）"
+                        } else {
+                            "当前已是最新版本 v${AppInfo.VERSION_NAME}"
+                        },
+                    )
+                }
             }
-            val dto = LedgerJson.codec.decodeFromString<GitHubReleaseDto>(resp.body)
-            val latestClean = dto.tagName.trim().removePrefix("v").removePrefix("V")
-            val hasNewer = compareVersions(latestClean, AppInfo.VERSION_NAME) > 0
-            UpdateCheckResult(
-                success = true,
-                hasUpdate = hasNewer,
-                currentVersion = AppInfo.VERSION_NAME,
-                latestVersion = latestClean.ifBlank { AppInfo.VERSION_NAME },
-                releaseUrl = dto.htmlUrl.ifBlank { "${AppInfo.GITHUB_URL}/releases" },
-                releaseNotes = dto.body.take(400),
-                message = if (hasNewer) {
-                    "发现新版本 v$latestClean（当前 v${AppInfo.VERSION_NAME}）"
-                } else {
-                    "当前已是最新版本 v${AppInfo.VERSION_NAME}"
-                },
+            null
+        }.getOrNull()
+
+        if (apiAttempt != null) return apiAttempt
+
+        // Fallback: Parse https://github.com/<owner>/<repo>/releases/latest HTML/redirect (no API rate limit)
+        return runCatching {
+            val resp = PlatformBridge.httpRequest(
+                method = "GET",
+                url = AppInfo.RELEASES_LATEST_URL,
+                headers = mapOf("User-Agent" to "MochiLedger/${AppInfo.VERSION_NAME}"),
+                connectTimeoutMs = 8_000,
+                readTimeoutMs = 12_000,
             )
+            val match = tagRegex.find(resp.body)
+                ?: resp.headers.values.firstNotNullOfOrNull { tagRegex.find(it) }
+            val latestClean = match?.groupValues?.getOrNull(1)?.trim()
+            if (!latestClean.isNullOrBlank()) {
+                val hasNewer = compareVersions(latestClean, AppInfo.VERSION_NAME) > 0
+                UpdateCheckResult(
+                    success = true,
+                    hasUpdate = hasNewer,
+                    currentVersion = AppInfo.VERSION_NAME,
+                    latestVersion = latestClean,
+                    releaseUrl = "${AppInfo.GITHUB_URL}/releases/tag/v$latestClean",
+                    message = if (hasNewer) {
+                        "发现新版本 v$latestClean（当前 v${AppInfo.VERSION_NAME}）"
+                    } else {
+                        "当前已是最新版本 v${AppInfo.VERSION_NAME}"
+                    },
+                )
+            } else {
+                UpdateCheckResult(false, message = "无法解析最新版本号（HTTP ${resp.statusCode}），请检查网络或访问 GitHub Releases")
+            }
         }.getOrElse { e ->
-            UpdateCheckResult(false, message = "检查更新异常：${e.message ?: e::class.simpleName}")
+            UpdateCheckResult(false, message = "检查更新失败：${e.message ?: e::class.simpleName}")
         }
     }
 

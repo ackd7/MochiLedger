@@ -41,9 +41,9 @@ import com.mochiledger.shared.model.TransactionType
 import com.mochiledger.shared.model.formatCents
 import com.mochiledger.shared.model.parseAmountToCents
 import com.mochiledger.shared.platform.PlatformBridge
+import com.mochiledger.shared.ui.components.FlatIcon
 import com.mochiledger.shared.ui.components.MochiChip
 import com.mochiledger.shared.ui.components.TransactionRow
-import com.mochiledger.shared.ui.components.categoryEmoji
 import com.mochiledger.shared.ui.theme.MochiColors
 import com.mochiledger.shared.ui.theme.mochiHeroBrush
 import com.mochiledger.shared.ui.theme.mochiShape
@@ -244,8 +244,8 @@ fun TransactionsScreen(
                             modifier = Modifier.fillMaxWidth().padding(32.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
                         ) {
-                            Text("📒", fontSize = 36.sp)
-                            Spacer(Modifier.height(8.dp))
+                            FlatIcon("ledger", MiuixTheme.colorScheme.onSurfaceVariantSummary, size = 34.dp)
+                            Spacer(Modifier.height(10.dp))
                             Text("本月暂无账单记录", fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(4.dp))
                             Text(
@@ -318,12 +318,7 @@ fun TransactionsScreen(
                 },
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                text = "+",
-                color = Color.White,
-                fontSize = 30.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+            FlatIcon(name = "plus", tint = Color.White, size = 26.dp)
         }
     }
 
@@ -441,7 +436,7 @@ private fun TransactionEditorDialog(
                     ) {
                         availableCategories.forEach { cat ->
                             MochiChip(
-                                label = "${categoryEmoji(cat.iconKey)} ${cat.name}",
+                                label = cat.name,
                                 selected = selectedCategoryId == cat.id,
                                 accentColor = Color(cat.colorHex),
                                 onClick = { selectedCategoryId = cat.id },

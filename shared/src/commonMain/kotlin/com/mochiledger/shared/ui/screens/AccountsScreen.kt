@@ -36,8 +36,8 @@ import com.mochiledger.shared.model.AccountType
 import com.mochiledger.shared.model.LedgerAccount
 import com.mochiledger.shared.model.formatCents
 import com.mochiledger.shared.model.parseAmountToCents
+import com.mochiledger.shared.ui.components.FlatIcon
 import com.mochiledger.shared.ui.components.MochiChip
-import com.mochiledger.shared.ui.components.categoryEmoji
 import com.mochiledger.shared.ui.theme.MochiColors
 import com.mochiledger.shared.ui.theme.mochiHeroBrush
 import com.mochiledger.shared.ui.theme.mochiShape
@@ -139,8 +139,8 @@ fun AccountsScreen(
                         modifier = Modifier.fillMaxWidth().padding(32.dp),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        Text("💳", fontSize = 36.sp)
-                        Spacer(Modifier.height(8.dp))
+                        FlatIcon("accounts", MiuixTheme.colorScheme.onSurfaceVariantSummary, size = 34.dp)
+                        Spacer(Modifier.height(10.dp))
                         Text("暂无资产账户", fontWeight = FontWeight.SemiBold)
                         Spacer(Modifier.height(4.dp))
                         Text(
@@ -177,7 +177,7 @@ fun AccountsScreen(
                                         .background(color.copy(alpha = 0.15f)),
                                     contentAlignment = Alignment.Center,
                                 ) {
-                                    Text(categoryEmoji(acc.iconKey), fontSize = 18.sp)
+                                    FlatIcon(acc.iconKey, color, size = 20.dp)
                                 }
                                 Spacer(Modifier.width(12.dp))
                                 Column(modifier = Modifier.weight(1f)) {

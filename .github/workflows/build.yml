@@ -103,6 +103,7 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - name: Download All Build Artifacts
         uses: actions/download-artifact@v4
         with:
@@ -119,6 +120,28 @@ jobs:
           cp release-artifacts/MochiLedger-windows-x64-portable.zip "release-files/MochiLedger-${TAG}-windows-x64-portable.zip"
           cp release-artifacts/MochiLedger-sync-server.zip "release-files/MochiLedger-${TAG}-sync-server.zip"
           ls -lh release-files
+      - name: Build Release Notes with Changelog
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          {
+            echo "## 墨记 MochiLedger ${TAG}"
+            echo ""
+            echo "### 更新日志 (Changelog)"
+            awk -v tag="## ${TAG}" '
+              $0 == tag { found=1; next }
+              /^## / && found { exit }
+              found { print }
+            ' CHANGELOG.md
+            echo ""
+            echo "### 下载说明"
+            echo "- **Windows 安装版（NSIS）**：\`MochiLedger-${TAG}-windows-x64-setup.exe\`"
+            echo "- **Windows 便携免安装版**：\`MochiLedger-${TAG}-windows-x64-portable.zip\`"
+            echo "- **Android 通用版（32/64位均可安装）**：\`MochiLedger-${TAG}-android-universal.apk\`"
+            echo "- **Android 64位版（arm64-v8a）**：\`MochiLedger-${TAG}-android-arm64-v8a.apk\`"
+            echo "- **Android 32位版（armeabi-v7a）**：\`MochiLedger-${TAG}-android-armeabi-v7a.apk\`"
+            echo "- **独立自建同步服务端（Ktor）**：\`MochiLedger-${TAG}-sync-server.zip\`"
+          } > release-notes.md
+          cat release-notes.md
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -127,14 +150,4 @@ jobs:
           gh release create "${TAG}" release-files/* \
             --repo "${GITHUB_REPOSITORY}" \
             --title "墨记 MochiLedger ${TAG}" \
-            --notes "## 墨记 MochiLedger ${TAG}
-
-          跨端开源记账软件（Windows + Android），基于 Kotlin Multiplatform + Compose Multiplatform，融合 **Miuix** 与 **Mochi** 风格 UI。
-
-          ### 下载说明
-          - **Windows 安装版（NSIS）**：\`MochiLedger-${TAG}-windows-x64-setup.exe\`
-          - **Windows 便携免安装版**：\`MochiLedger-${TAG}-windows-x64-portable.zip\`
-          - **Android 通用版（32/64位均可安装）**：\`MochiLedger-${TAG}-android-universal.apk\`
-          - **Android 64位版（arm64-v8a）**：\`MochiLedger-${TAG}-android-arm64-v8a.apk\`
-          - **Android 32位版（armeabi-v7a）**：\`MochiLedger-${TAG}-android-armeabi-v7a.apk\`
-          - **独立自建同步服务端（Ktor）**：\`MochiLedger-${TAG}-sync-server.zip\`"
+            --notes-file release-notes.md
