@@ -1,6 +1,8 @@
 package com.mochiledger.shared
 
+import com.mochiledger.shared.model.AccountType
 import com.mochiledger.shared.model.DefaultLedgerSeed
+import com.mochiledger.shared.model.LedgerAccount
 import com.mochiledger.shared.model.LedgerSnapshot
 import com.mochiledger.shared.model.LedgerTransaction
 import com.mochiledger.shared.model.PaymentChannel
@@ -16,7 +18,11 @@ import kotlin.test.assertTrue
 class MochiLedgerCoreTest {
 
     private val now = 1_760_000_000_000L
-    private val accounts = DefaultLedgerSeed.defaultAccounts(now)
+    private val accounts = listOf(
+        LedgerAccount("acc_wechat", "微信零钱", AccountType.DIGITAL_WALLET, 0L, updatedAt = now),
+        LedgerAccount("acc_alipay", "支付宝", AccountType.DIGITAL_WALLET, 0L, updatedAt = now),
+        LedgerAccount("acc_huabei", "花呗", AccountType.CREDIT_CARD, 0L, updatedAt = now),
+    )
     private val rules = DefaultLedgerSeed.defaultRules(now)
 
     @Test
@@ -116,5 +122,41 @@ class MochiLedgerCoreTest {
         assertEquals(2, merged.transactions.size)
         assertEquals("新商户", merged.transactions.first { it.id == "tx_1" }.merchant)
         assertTrue(merged.transactions.any { it.id == "tx_2" })
+    }
+
+    @Test
+    fun multiSourceMergeDeduplicatesAccountsAndTransactions() {
+        val accA = LedgerAccount("acc_1", "微信零钱", AccountType.DIGITAL_WALLET, 10000, updatedAt = now)
+        val accADuplicate = LedgerAccount("acc_2", "微信零钱", AccountType.DIGITAL_WALLET, 10000, updatedAt = now + 2000)
+
+        val txA = LedgerTransaction(
+            id = "tx_a",
+            type = TransactionType.EXPENSE,
+            amountCents = 3200,
+            categoryId = "cat_food",
+            accountId = "acc_1",
+            timestamp = now,
+            merchant = "星巴克",
+            updatedAt = now,
+        )
+        val txADuplicate = LedgerTransaction(
+            id = "tx_b",
+            type = TransactionType.EXPENSE,
+            amountCents = 3200,
+            categoryId = "cat_food",
+            accountId = "acc_2",
+            timestamp = now + 200, // same second
+            merchant = "星巴克",
+            updatedAt = now + 3000,
+        )
+
+        val snapWebDav = LedgerSnapshot(exportedAt = now, accounts = listOf(accA), transactions = listOf(txA))
+        val snapServer = LedgerSnapshot(exportedAt = now + 3000, accounts = listOf(accADuplicate), transactions = listOf(txADuplicate))
+        val merged = LedgerMerger.merge(snapWebDav, snapServer, now + 4000, "win-test")
+
+        assertEquals(1, merged.accounts.count { !it.isDeleted })
+        assertEquals(1, merged.transactions.count { !it.isDeleted })
+        assertEquals("acc_2", merged.accounts.first().id)
+        assertEquals("acc_2", merged.transactions.first().accountId)
     }
 }

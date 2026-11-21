@@ -1,5 +1,6 @@
 package com.mochiledger.shared.sync
 
+import com.mochiledger.shared.model.AppInfo
 import com.mochiledger.shared.model.AutoTrackRule
 import com.mochiledger.shared.model.LedgerAccount
 import com.mochiledger.shared.model.LedgerBudget
@@ -9,11 +10,30 @@ import com.mochiledger.shared.model.LedgerTransaction
 import com.mochiledger.shared.model.SelfHostedSyncConfig
 import com.mochiledger.shared.model.WebDavConfig
 import com.mochiledger.shared.platform.PlatformBridge
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
+
+@Serializable
+data class UpdateCheckResult(
+    val success: Boolean,
+    val hasUpdate: Boolean = false,
+    val currentVersion: String = AppInfo.VERSION_NAME,
+    val latestVersion: String = AppInfo.VERSION_NAME,
+    val releaseUrl: String = AppInfo.GITHUB_URL,
+    val releaseNotes: String = "",
+    val message: String = "",
+)
+
+@Serializable
+private data class GitHubReleaseDto(
+    @SerialName("tag_name") val tagName: String = "",
+    @SerialName("html_url") val htmlUrl: String = "",
+    val body: String = "",
+)
 
 @Serializable
 data class SyncResult(
@@ -47,21 +67,88 @@ object LedgerJson {
 }
 
 /**
- * Deterministic Last-Write-Wins (LWW) merger for bidirectional multi-device sync
- * across Windows, Android, WebDAV, and the Self-Hosted Sync Server.
+ * Deterministic Last-Write-Wins (LWW) + semantic deduplication merger for multi-source sync
+ * across Windows, Android, WebDAV, Self-Hosted Sync Server, and local backups.
+ * Duplicate accounts or transactions from multiple backup sources are collapsed to a single copy.
  */
 object LedgerMerger {
     fun merge(local: LedgerSnapshot, remote: LedgerSnapshot, now: Long, deviceId: String): LedgerSnapshot {
+        val rawAccounts = mergeEntities(local.accounts, remote.accounts, { it.id }, { it.updatedAt })
+        val dedupedAccounts = deduplicateAccounts(rawAccounts)
+
+        val accountAliasMap = buildAccountAliasMap(rawAccounts, dedupedAccounts)
+        val rawTransactions = mergeEntities(local.transactions, remote.transactions, { it.id }, { it.updatedAt })
+            .map { tx ->
+                tx.copy(
+                    accountId = accountAliasMap[tx.accountId] ?: tx.accountId,
+                    targetAccountId = tx.targetAccountId?.let { accountAliasMap[it] ?: it },
+                )
+            }
+        val dedupedTransactions = deduplicateTransactions(rawTransactions)
+
         return LedgerSnapshot(
             schemaVersion = maxOf(local.schemaVersion, remote.schemaVersion),
             exportedAt = now,
             sourceDeviceId = deviceId,
-            accounts = mergeEntities(local.accounts, remote.accounts, { it.id }, { it.updatedAt }),
+            accounts = dedupedAccounts,
             categories = mergeEntities(local.categories, remote.categories, { it.id }, { it.updatedAt }),
-            transactions = mergeEntities(local.transactions, remote.transactions, { it.id }, { it.updatedAt }),
+            transactions = dedupedTransactions,
             budgets = mergeEntities(local.budgets, remote.budgets, { it.id }, { it.updatedAt }),
             rules = mergeEntities(local.rules, remote.rules, { it.id }, { it.updatedAt }),
         )
+    }
+
+    private fun deduplicateAccounts(accounts: List<LedgerAccount>): List<LedgerAccount> {
+        val deleted = accounts.filter { it.isDeleted }
+        val activeByKey = LinkedHashMap<String, LedgerAccount>()
+        for (acc in accounts.filter { !it.isDeleted }) {
+            val key = "${acc.name.trim().lowercase()}|${acc.type.name}"
+            val existing = activeByKey[key]
+            if (existing == null || acc.updatedAt > existing.updatedAt) {
+                activeByKey[key] = acc
+            }
+        }
+        return activeByKey.values.toList() + deleted
+    }
+
+    private fun buildAccountAliasMap(
+        allAccounts: List<LedgerAccount>,
+        keptAccounts: List<LedgerAccount>,
+    ): Map<String, String> {
+        val canonicalByKey = keptAccounts.filter { !it.isDeleted }.associateBy {
+            "${it.name.trim().lowercase()}|${it.type.name}"
+        }
+        val map = mutableMapOf<String, String>()
+        for (acc in allAccounts.filter { !it.isDeleted }) {
+            val key = "${acc.name.trim().lowercase()}|${acc.type.name}"
+            canonicalByKey[key]?.let { canonical ->
+                if (canonical.id != acc.id) {
+                    map[acc.id] = canonical.id
+                }
+            }
+        }
+        return map
+    }
+
+    private fun deduplicateTransactions(transactions: List<LedgerTransaction>): List<LedgerTransaction> {
+        val deleted = transactions.filter { it.isDeleted }
+        val activeByFingerprint = LinkedHashMap<String, LedgerTransaction>()
+        for (tx in transactions.filter { !it.isDeleted }) {
+            val fingerprint = listOf(
+                tx.type.name,
+                tx.amountCents.toString(),
+                (tx.timestamp / 1000L).toString(),
+                tx.accountId,
+                tx.targetAccountId.orEmpty(),
+                tx.merchant.trim().lowercase(),
+                tx.note.trim().lowercase(),
+            ).joinToString("|")
+            val existing = activeByFingerprint[fingerprint]
+            if (existing == null || tx.updatedAt > existing.updatedAt) {
+                activeByFingerprint[fingerprint] = tx
+            }
+        }
+        return activeByFingerprint.values.toList() + deleted
     }
 
     private fun <T> mergeEntities(
@@ -82,6 +169,57 @@ object LedgerMerger {
             }
         }
         return map.values.toList()
+    }
+}
+
+object GitHubUpdateChecker {
+    fun checkLatest(): UpdateCheckResult {
+        return runCatching {
+            val resp = PlatformBridge.httpRequest(
+                method = "GET",
+                url = AppInfo.RELEASES_API_URL,
+                headers = mapOf(
+                    "Accept" to "application/vnd.github+json",
+                    "User-Agent" to "MochiLedger/${AppInfo.VERSION_NAME}",
+                ),
+            )
+            if (!resp.isSuccessful) {
+                return UpdateCheckResult(
+                    success = false,
+                    message = "检查更新失败（HTTP ${resp.statusCode}）",
+                )
+            }
+            val dto = LedgerJson.codec.decodeFromString<GitHubReleaseDto>(resp.body)
+            val latestClean = dto.tagName.trim().removePrefix("v").removePrefix("V")
+            val hasNewer = compareVersions(latestClean, AppInfo.VERSION_NAME) > 0
+            UpdateCheckResult(
+                success = true,
+                hasUpdate = hasNewer,
+                currentVersion = AppInfo.VERSION_NAME,
+                latestVersion = latestClean.ifBlank { AppInfo.VERSION_NAME },
+                releaseUrl = dto.htmlUrl.ifBlank { "${AppInfo.GITHUB_URL}/releases" },
+                releaseNotes = dto.body.take(400),
+                message = if (hasNewer) {
+                    "发现新版本 v$latestClean（当前 v${AppInfo.VERSION_NAME}）"
+                } else {
+                    "当前已是最新版本 v${AppInfo.VERSION_NAME}"
+                },
+            )
+        }.getOrElse { e ->
+            UpdateCheckResult(false, message = "检查更新异常：${e.message ?: e::class.simpleName}")
+        }
+    }
+
+    private fun compareVersions(a: String, b: String): Int {
+        val pa = a.split(".").map { it.toIntOrNull() ?: 0 }
+        val pb = b.split(".").map { it.toIntOrNull() ?: 0 }
+        val maxLen = maxOf(pa.size, pb.size)
+        for (i in 0 until maxLen) {
+            val va = pa.getOrElse(i) { 0 }
+            val vb = pb.getOrElse(i) { 0 }
+            if (va != vb) return va.compareTo(vb)
+        }
+        return 0
     }
 }
 

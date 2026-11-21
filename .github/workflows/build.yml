@@ -43,14 +43,20 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
-      - name: Build Android APK
+      - name: Build Android APKs (32-bit, 64-bit, Universal)
         run: ./gradlew :androidApp:assembleDebug -PincludeAndroid=true --no-daemon
-      - name: Rename Android APK
-        run: cp androidApp/build/outputs/apk/debug/androidApp-debug.apk MochiLedger-android.apk
+      - name: Collect Android APKs
+        run: |
+          mkdir -p android-apks
+          ls -la androidApp/build/outputs/apk/debug/
+          cp androidApp/build/outputs/apk/debug/*armeabi-v7a*.apk android-apks/MochiLedger-android-armeabi-v7a.apk
+          cp androidApp/build/outputs/apk/debug/*arm64-v8a*.apk android-apks/MochiLedger-android-arm64-v8a.apk
+          cp androidApp/build/outputs/apk/debug/*universal*.apk android-apks/MochiLedger-android-universal.apk
+          ls -lh android-apks/
       - uses: actions/upload-artifact@v4
         with:
           name: mochiledger-android-apk
-          path: MochiLedger-android.apk
+          path: android-apks/*.apk
 
   build-windows:
     name: Windows Desktop App (NSIS EXE + Portable Zip)
@@ -106,7 +112,9 @@ jobs:
         run: |
           TAG="${GITHUB_REF_NAME}"
           mkdir -p release-files
-          cp release-artifacts/MochiLedger-android.apk "release-files/MochiLedger-${TAG}-android.apk"
+          cp release-artifacts/MochiLedger-android-universal.apk "release-files/MochiLedger-${TAG}-android-universal.apk"
+          cp release-artifacts/MochiLedger-android-arm64-v8a.apk "release-files/MochiLedger-${TAG}-android-arm64-v8a.apk"
+          cp release-artifacts/MochiLedger-android-armeabi-v7a.apk "release-files/MochiLedger-${TAG}-android-armeabi-v7a.apk"
           cp release-artifacts/MochiLedger-windows-x64-setup.exe "release-files/MochiLedger-${TAG}-windows-x64-setup.exe"
           cp release-artifacts/MochiLedger-windows-x64-portable.zip "release-files/MochiLedger-${TAG}-windows-x64-portable.zip"
           cp release-artifacts/MochiLedger-sync-server.zip "release-files/MochiLedger-${TAG}-sync-server.zip"
@@ -125,9 +133,8 @@ jobs:
 
           ### 下载说明
           - **Windows 安装版（NSIS）**：\`MochiLedger-${TAG}-windows-x64-setup.exe\`
-            - 双击安装，支持中文向导、开始菜单与桌面快捷方式、系统应用列表卸载（卸载时保留 \`%APPDATA%\\MochiLedger\` 本地账本数据）。
           - **Windows 便携免安装版**：\`MochiLedger-${TAG}-windows-x64-portable.zip\`
-          - **Android 客户端（含 LSPosed 自动记账模块）**：\`MochiLedger-${TAG}-android.apk\`
-            - 支持在 LSPosed 中勾选微信 (\`com.tencent.mm\`) 与支付宝 (\`com.eg.android.AlipayGphone\`) 自动记账，亦支持无 Root 系统通知监听降级方案。
-          - **自建同步服务端（Ktor）**：\`MochiLedger-${TAG}-sync-server.zip\`
-            - 亦可通过仓库内 \`syncServer/docker-compose.yml\` 一键 Docker 部署，支持 WebDAV 与自建服务器双向合并同步。"
+          - **Android 通用版（32/64位均可安装）**：\`MochiLedger-${TAG}-android-universal.apk\`
+          - **Android 64位版（arm64-v8a）**：\`MochiLedger-${TAG}-android-arm64-v8a.apk\`
+          - **Android 32位版（armeabi-v7a）**：\`MochiLedger-${TAG}-android-armeabi-v7a.apk\`
+          - **独立自建同步服务端（Ktor）**：\`MochiLedger-${TAG}-sync-server.zip\`"

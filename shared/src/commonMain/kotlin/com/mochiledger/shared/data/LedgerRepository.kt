@@ -24,10 +24,12 @@ import com.mochiledger.shared.parser.PaymentMessageParser
 import com.mochiledger.shared.platform.LedgerDatabaseDriver
 import com.mochiledger.shared.platform.PlatformBridge
 import com.mochiledger.shared.sync.CsvExporter
+import com.mochiledger.shared.sync.GitHubUpdateChecker
 import com.mochiledger.shared.sync.LedgerJson
 import com.mochiledger.shared.sync.LedgerMerger
 import com.mochiledger.shared.sync.SelfHostedSyncClient
 import com.mochiledger.shared.sync.SyncResult
+import com.mochiledger.shared.sync.UpdateCheckResult
 import com.mochiledger.shared.sync.WebDavSyncClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -149,15 +151,15 @@ class LedgerRepository(
         }
 
         val existing = driver.loadSnapshot()
-        val snapshot = if (existing == null || (existing.accounts.isEmpty() && existing.categories.isEmpty())) {
+        val snapshot = if (existing == null || existing.categories.isEmpty()) {
             val seeded = LedgerSnapshot(
                 schemaVersion = 1,
                 exportedAt = now,
                 sourceDeviceId = meta.deviceId,
-                accounts = DefaultLedgerSeed.defaultAccounts(now),
+                accounts = emptyList(),
                 categories = DefaultLedgerSeed.defaultCategories(now),
-                transactions = seedSampleTransactions(now),
-                budgets = DefaultLedgerSeed.defaultBudgets(now),
+                transactions = emptyList(),
+                budgets = emptyList(),
                 rules = DefaultLedgerSeed.defaultRules(now),
             )
             driver.saveSnapshot(seeded)
@@ -174,62 +176,6 @@ class LedgerRepository(
             rules = snapshot.rules,
             metadata = meta,
             databasePath = driver.databasePath,
-        )
-    }
-
-    private fun seedSampleTransactions(now: Long): List<LedgerTransaction> {
-        val dayMs = 86_400_000L
-        return listOf(
-            LedgerTransaction(
-                id = "tx_seed_1",
-                type = TransactionType.EXPENSE,
-                amountCents = 3200,
-                categoryId = "cat_food",
-                accountId = "acc_alipay",
-                timestamp = now - 2 * 3_600_000L,
-                merchant = "星巴克咖啡",
-                note = "支付宝 · 拿铁",
-                source = RecordSource.ALIPAY_LSPOSED,
-                rawAutoMessage = "支付宝交易提醒：向星巴克咖啡付款32.00元",
-                updatedAt = now,
-            ),
-            LedgerTransaction(
-                id = "tx_seed_2",
-                type = TransactionType.EXPENSE,
-                amountCents = 2880,
-                categoryId = "cat_food",
-                accountId = "acc_wechat",
-                timestamp = now - 5 * 3_600_000L,
-                merchant = "美团外卖",
-                note = "微信支付 · 午餐",
-                source = RecordSource.WECHAT_LSPOSED,
-                rawAutoMessage = "微信支付：向美团外卖付款28.80元",
-                updatedAt = now,
-            ),
-            LedgerTransaction(
-                id = "tx_seed_3",
-                type = TransactionType.EXPENSE,
-                amountCents = 1850,
-                categoryId = "cat_transport",
-                accountId = "acc_wechat",
-                timestamp = now - dayMs,
-                merchant = "滴滴出行",
-                note = "打车通勤",
-                source = RecordSource.WECHAT_LSPOSED,
-                updatedAt = now,
-            ),
-            LedgerTransaction(
-                id = "tx_seed_4",
-                type = TransactionType.INCOME,
-                amountCents = 1250000,
-                categoryId = "cat_salary",
-                accountId = "acc_bank_cmb",
-                timestamp = now - 3 * dayMs,
-                merchant = "月度薪资",
-                note = "工资入账",
-                source = RecordSource.MANUAL,
-                updatedAt = now,
-            ),
         )
     }
 
@@ -475,6 +421,44 @@ class LedgerRepository(
 
     suspend fun testSelfHosted(): SyncResult = withContext(Dispatchers.IO) {
         SelfHostedSyncClient.testConnection(_state.value.metadata.selfHosted)
+    }
+
+    /**
+     * Multi-source sync: runs WebDAV and/or Self-Hosted Server together when enabled,
+     * merging and deduplicating transactions & accounts across all sources.
+     */
+    suspend fun syncAllEnabledSources(): SyncResult = withContext(Dispatchers.IO) {
+        val meta = _state.value.metadata
+        val useWebDav = meta.webDav.enabled && meta.webDav.serverUrl.isNotBlank() && meta.webDav.username.isNotBlank()
+        val useSelfHosted = meta.selfHosted.enabled && meta.selfHosted.serverUrl.isNotBlank()
+        if (!useWebDav && !useSelfHosted) {
+            return@withContext SyncResult(false, "请先进入 WebDAV 或自建服务器页面并开启至少一种同步方式")
+        }
+        val messages = mutableListOf<String>()
+        var anySuccess = false
+        if (useWebDav) {
+            val res = syncWithWebDav()
+            messages.add("WebDAV：${res.message}")
+            if (res.success) anySuccess = true
+        }
+        if (useSelfHosted) {
+            val res = syncWithSelfHosted()
+            messages.add("自建服：${res.message}")
+            if (res.success) anySuccess = true
+        }
+        // Second pass to propagate merged/deduped state back if both were enabled
+        if (useWebDav && useSelfHosted && anySuccess) {
+            syncWithWebDav()
+        }
+        SyncResult(
+            success = anySuccess,
+            message = messages.joinToString(" | "),
+            syncedAt = PlatformBridge.currentTimeMillis(),
+        )
+    }
+
+    suspend fun checkForUpdates(): UpdateCheckResult = withContext(Dispatchers.IO) {
+        GitHubUpdateChecker.checkLatest()
     }
 
     fun exportJsonBackup(): Result<String> {

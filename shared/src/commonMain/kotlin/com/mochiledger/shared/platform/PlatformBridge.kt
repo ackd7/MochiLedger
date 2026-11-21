@@ -42,5 +42,6 @@ expect object PlatformBridge {
     ): HttpResponseData
     fun getAutoTrackRuntimeStatus(): AutoTrackRuntimeStatus
     fun openNotificationListenerSettings(): Boolean
+    fun openUrl(url: String): Boolean
     fun defaultDeviceId(): String
 }

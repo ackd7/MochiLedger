@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mochiledger.shared.data.LedgerUiState
@@ -56,6 +57,7 @@ fun AutoTrackScreen(
     onSaveRule: (AutoTrackRule) -> Unit,
     onDeleteRule: (String) -> Unit,
     onShowMessage: (String) -> Unit,
+    bottomInset: Dp = 0.dp,
 ) {
     val runtime = remember { PlatformBridge.getAutoTrackRuntimeStatus() }
     val settings = state.metadata.autoTrack
@@ -72,7 +74,7 @@ fun AutoTrackScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 24.dp + bottomInset),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         // LSPosed Status Hero

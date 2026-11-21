@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -55,6 +56,7 @@ fun AccountsScreen(
     onSaveAccount: (LedgerAccount) -> Unit,
     onDeleteAccount: (String) -> Unit,
     onShowMessage: (String) -> Unit,
+    bottomInset: Dp = 0.dp,
 ) {
     val summaries = remember(state.accounts, state.transactions) { state.accountSummaries() }
     val totalAssets = summaries.filter { !it.account.type.isLiability && it.currentBalanceCents >= 0 }.sumOf { it.currentBalanceCents }
@@ -70,7 +72,7 @@ fun AccountsScreen(
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 24.dp + bottomInset),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item(key = "net_worth") {
@@ -130,7 +132,27 @@ fun AccountsScreen(
             }
         }
 
-        grouped.forEach { (type, list) ->
+        if (grouped.isEmpty()) {
+            item(key = "empty_accounts") {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth().padding(32.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                    ) {
+                        Text("💳", fontSize = 36.sp)
+                        Spacer(Modifier.height(8.dp))
+                        Text("暂无资产账户", fontWeight = FontWeight.SemiBold)
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            "点击上方「+ 添加账户」添加微信、支付宝、银行卡或现金账户",
+                            fontSize = 12.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    }
+                }
+            }
+        } else {
+            grouped.forEach { (type, list) ->
             item(key = "group_${type.name}") {
                 SmallTitle(text = type.label)
                 Card(modifier = Modifier.fillMaxWidth()) {
@@ -181,6 +203,7 @@ fun AccountsScreen(
                     }
                 }
             }
+        }
         }
     }
 

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -26,8 +27,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -62,6 +65,7 @@ fun TransactionsScreen(
     onSaveTransaction: (LedgerTransaction) -> Unit,
     onDeleteTransaction: (String) -> Unit,
     onShowMessage: (String) -> Unit,
+    bottomInset: Dp = 0.dp,
 ) {
     val nowDt = remember {
         Instant.fromEpochMilliseconds(PlatformBridge.currentTimeMillis()).toLocalDateTime(TimeZone.currentSystemDefault())
@@ -105,7 +109,7 @@ fun TransactionsScreen(
     Box(modifier = Modifier.fillMaxSize()) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 92.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 104.dp + bottomInset),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             // Mochi Liquid-Glass style Monthly Hero Card
@@ -212,26 +216,12 @@ fun TransactionsScreen(
             // Search & Filter Bar
             item(key = "controls") {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
+                    TextField(
+                        value = searchQuery,
+                        onValueChange = { searchQuery = it },
+                        label = "搜索商户、备注或分类...",
                         modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        TextField(
-                            value = searchQuery,
-                            onValueChange = { searchQuery = it },
-                            label = "搜索商户、备注或分类...",
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(
-                            text = "+ 记一笔",
-                            onClick = {
-                                editingTx = null
-                                showAddDialog = true
-                            },
-                            colors = ButtonDefaults.textButtonColorsPrimary(),
-                        )
-                    }
+                    )
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         MochiChip("全部", filterType == null) { filterType = null }
                         MochiChip("支出", filterType == TransactionType.EXPENSE, MochiColors.Expense) {
@@ -256,10 +246,10 @@ fun TransactionsScreen(
                         ) {
                             Text("📒", fontSize = 36.sp)
                             Spacer(Modifier.height(8.dp))
-                            Text("本月暂无符合条件的账单", fontWeight = FontWeight.SemiBold)
+                            Text("本月暂无账单记录", fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(4.dp))
                             Text(
-                                "点击右上角「+ 记一笔」或在「自动记账」中测试 LSPosed 通知解析",
+                                "点击右下角悬浮「+」按钮开始记账",
                                 fontSize = 12.sp,
                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             )
@@ -311,6 +301,29 @@ fun TransactionsScreen(
                     }
                 }
             }
+        }
+
+        // Floating '+' Action Button for manual bookkeeping
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(end = 22.dp, bottom = 22.dp + bottomInset)
+                .size(60.dp)
+                .shadow(elevation = 10.dp, shape = mochiShape(20.dp))
+                .clip(mochiShape(20.dp))
+                .background(mochiHeroBrush())
+                .clickable {
+                    editingTx = null
+                    showAddDialog = true
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Text(
+                text = "+",
+                color = Color.White,
+                fontSize = 30.sp,
+                fontWeight = FontWeight.SemiBold,
+            )
         }
     }
 

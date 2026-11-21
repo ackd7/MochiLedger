@@ -281,6 +281,17 @@ actual object PlatformBridge {
         }.getOrDefault(false)
     }
 
+    actual fun openUrl(url: String): Boolean {
+        val ctx = AndroidPlatformContext.appContext ?: return false
+        return runCatching {
+            val intent = Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            ctx.startActivity(intent)
+            true
+        }.getOrDefault(false)
+    }
+
     actual fun defaultDeviceId(): String {
         val model = Build.MODEL?.replace(" ", "_") ?: "android"
         return "and-$model-${UUID.randomUUID().toString().take(6)}"

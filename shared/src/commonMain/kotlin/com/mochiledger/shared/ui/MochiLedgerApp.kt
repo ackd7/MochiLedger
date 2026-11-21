@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
@@ -28,13 +30,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mochiledger.shared.data.LedgerRepository
+import com.mochiledger.shared.platform.PlatformBridge
 import com.mochiledger.shared.ui.screens.AccountsScreen
 import com.mochiledger.shared.ui.screens.AnalyticsScreen
+import com.mochiledger.shared.ui.screens.AppSettingsScreen
 import com.mochiledger.shared.ui.screens.AutoTrackScreen
 import com.mochiledger.shared.ui.screens.SettingsSyncScreen
 import com.mochiledger.shared.ui.screens.TransactionsScreen
@@ -52,7 +58,8 @@ enum class MochiTab(val title: String, val emoji: String) {
     ANALYTICS("统计", "📊"),
     ACCOUNTS("资产", "💳"),
     AUTO_TRACK("自动记账", "⚡"),
-    SETTINGS("同步设置", "☁️"),
+    SYNC("同步", "☁️"),
+    SETTINGS("设置", "⚙️"),
 }
 
 @Composable
@@ -60,6 +67,15 @@ fun MochiLedgerApp(
     repository: LedgerRepository = remember { LedgerRepository() },
 ) {
     val state by repository.state.collectAsState()
+    val supportsLsposed = remember { PlatformBridge.getAutoTrackRuntimeStatus().supportsLsposed }
+    val visibleTabs = remember(supportsLsposed) {
+        if (supportsLsposed) {
+            MochiTab.entries
+        } else {
+            MochiTab.entries.filterNot { it == MochiTab.AUTO_TRACK }
+        }
+    }
+
     var currentTab by remember { mutableStateOf(MochiTab.TRANSACTIONS) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
@@ -81,7 +97,7 @@ fun MochiLedgerApp(
 
             if (isWideScreen) {
                 Row(modifier = Modifier.fillMaxSize()) {
-                    // Desktop / Tablet Mochi Navigation Sidebar
+                    // Desktop / Tablet Navigation Sidebar (no LSPosed tab on Windows)
                     Column(
                         modifier = Modifier
                             .width(220.dp)
@@ -99,7 +115,7 @@ fun MochiLedgerApp(
                             )
                         }
                         Spacer(Modifier.height(8.dp))
-                        MochiTab.entries.forEach { tab ->
+                        visibleTabs.forEach { tab ->
                             val selected = currentTab == tab
                             val bg = if (selected) MiuixTheme.colorScheme.primary.copy(alpha = 0.14f) else Color.Transparent
                             val fg = if (selected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface
@@ -132,44 +148,16 @@ fun MochiLedgerApp(
                             repository = repository,
                             onShowMessage = ::showMessage,
                             scope = scope,
+                            bottomInset = 0.dp,
                         )
                     }
                 }
             } else {
-                // Mobile Android Adaptive Scaffold with Bottom Bar
+                // Mobile Android Adaptive Scaffold with larger Floating Pill Bottom Bar
+                val floatingBarInset = 96.dp
                 Scaffold(
                     topBar = {
                         SmallTopAppBar(title = "墨记 · ${currentTab.title}")
-                    },
-                    bottomBar = {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(MiuixTheme.colorScheme.surface)
-                                .padding(horizontal = 8.dp, vertical = 8.dp),
-                            horizontalArrangement = Arrangement.SpaceAround,
-                        ) {
-                            MochiTab.entries.forEach { tab ->
-                                val selected = currentTab == tab
-                                val fg = if (selected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurfaceVariantSummary
-                                Column(
-                                    modifier = Modifier
-                                        .clip(mochiShape(14.dp))
-                                        .background(if (selected) MiuixTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent)
-                                        .clickable { currentTab = tab }
-                                        .padding(horizontal = 12.dp, vertical = 6.dp),
-                                    horizontalAlignment = Alignment.CenterHorizontally,
-                                ) {
-                                    Text(tab.emoji, fontSize = 16.sp)
-                                    Text(
-                                        text = tab.title,
-                                        fontSize = 11.sp,
-                                        color = fg,
-                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                    )
-                                }
-                            }
-                        }
                     },
                 ) { innerPadding ->
                     Box(modifier = Modifier.fillMaxSize().padding(innerPadding)) {
@@ -179,7 +167,64 @@ fun MochiLedgerApp(
                             repository = repository,
                             onShowMessage = ::showMessage,
                             scope = scope,
+                            bottomInset = floatingBarInset,
                         )
+
+                        // Floating enlarged Mochi bottom navigation bar
+                        Box(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .navigationBarsPadding()
+                                .padding(horizontal = 12.dp, vertical = 10.dp)
+                                .fillMaxWidth()
+                                .shadow(elevation = 14.dp, shape = mochiShape(28.dp))
+                                .clip(mochiShape(28.dp))
+                                .background(MiuixTheme.colorScheme.surface.copy(alpha = 0.96f))
+                                .border(
+                                    width = 1.dp,
+                                    color = MiuixTheme.colorScheme.outline.copy(alpha = 0.25f),
+                                    shape = mochiShape(28.dp),
+                                )
+                                .padding(horizontal = 6.dp, vertical = 8.dp),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceEvenly,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                visibleTabs.forEach { tab ->
+                                    val selected = currentTab == tab
+                                    val fg = if (selected) {
+                                        MiuixTheme.colorScheme.primary
+                                    } else {
+                                        MiuixTheme.colorScheme.onSurfaceVariantSummary
+                                    }
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(mochiShape(20.dp))
+                                            .background(
+                                                if (selected) MiuixTheme.colorScheme.primary.copy(alpha = 0.16f)
+                                                else Color.Transparent,
+                                            )
+                                            .clickable { currentTab = tab }
+                                            .padding(vertical = 8.dp),
+                                        horizontalAlignment = Alignment.CenterHorizontally,
+                                        verticalArrangement = Arrangement.Center,
+                                    ) {
+                                        Text(tab.emoji, fontSize = 20.sp)
+                                        Spacer(Modifier.height(2.dp))
+                                        Text(
+                                            text = tab.title,
+                                            fontSize = 11.sp,
+                                            color = fg,
+                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                                            maxLines = 1,
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -191,7 +236,7 @@ fun MochiLedgerApp(
                 exit = fadeOut(),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 24.dp, start = 20.dp, end = 20.dp),
+                    .padding(bottom = if (isWideScreen) 24.dp else 108.dp, start = 20.dp, end = 20.dp),
             ) {
                 Box(
                     modifier = Modifier
@@ -218,6 +263,7 @@ private fun MochiMainContent(
     repository: LedgerRepository,
     onShowMessage: (String) -> Unit,
     scope: kotlinx.coroutines.CoroutineScope,
+    bottomInset: Dp,
 ) {
     when (tab) {
         MochiTab.TRANSACTIONS -> TransactionsScreen(
@@ -225,13 +271,18 @@ private fun MochiMainContent(
             onSaveTransaction = repository::upsertTransaction,
             onDeleteTransaction = repository::deleteTransaction,
             onShowMessage = onShowMessage,
+            bottomInset = bottomInset,
         )
-        MochiTab.ANALYTICS -> AnalyticsScreen(state = state)
+        MochiTab.ANALYTICS -> AnalyticsScreen(
+            state = state,
+            bottomInset = bottomInset,
+        )
         MochiTab.ACCOUNTS -> AccountsScreen(
             state = state,
             onSaveAccount = repository::upsertAccount,
             onDeleteAccount = repository::deleteAccount,
             onShowMessage = onShowMessage,
+            bottomInset = bottomInset,
         )
         MochiTab.AUTO_TRACK -> AutoTrackScreen(
             state = state,
@@ -241,8 +292,9 @@ private fun MochiMainContent(
             onSaveRule = repository::upsertRule,
             onDeleteRule = repository::deleteRule,
             onShowMessage = onShowMessage,
+            bottomInset = bottomInset,
         )
-        MochiTab.SETTINGS -> SettingsSyncScreen(
+        MochiTab.SYNC -> SettingsSyncScreen(
             state = state,
             onUpdateWebDav = repository::updateWebDavConfig,
             onTestWebDav = {
@@ -261,6 +313,9 @@ private fun MochiMainContent(
             onSyncSelfHosted = {
                 scope.launch { onShowMessage(repository.syncWithSelfHosted().message) }
             },
+            onSyncAllEnabled = {
+                scope.launch { onShowMessage(repository.syncAllEnabledSources().message) }
+            },
             onExportJson = {
                 val res = repository.exportJsonBackup()
                 onShowMessage(res.fold({ "已导出至：$it" }, { "导出失败：${it.message}" }))
@@ -272,7 +327,14 @@ private fun MochiMainContent(
             onImportJson = { json ->
                 onShowMessage(repository.importJsonSnapshot(json).message)
             },
+            bottomInset = bottomInset,
+        )
+        MochiTab.SETTINGS -> AppSettingsScreen(
+            state = state,
             onUpdateAppearance = repository::updateAppearance,
+            onCheckUpdates = { repository.checkForUpdates() },
+            onShowMessage = onShowMessage,
+            bottomInset = bottomInset,
         )
     }
 }

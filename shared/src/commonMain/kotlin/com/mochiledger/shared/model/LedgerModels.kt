@@ -201,55 +201,16 @@ data class MonthlySummary(
     val dailyExpenseCents: Map<Int, Long>,
 )
 
+object AppInfo {
+    const val VERSION_NAME = "1.0.3"
+    const val GITHUB_OWNER = "ackd7"
+    const val GITHUB_REPO = "MochiLedger"
+    const val GITHUB_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO"
+    const val RELEASES_API_URL = "https://api.github.com/repos/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
+}
+
 object DefaultLedgerSeed {
-    fun defaultAccounts(now: Long): List<LedgerAccount> = listOf(
-        LedgerAccount(
-            id = "acc_wechat",
-            name = "微信零钱",
-            type = AccountType.DIGITAL_WALLET,
-            initialBalanceCents = 128000,
-            iconKey = "wechat",
-            colorHex = 0xFF07C160,
-            updatedAt = now,
-        ),
-        LedgerAccount(
-            id = "acc_alipay",
-            name = "支付宝",
-            type = AccountType.DIGITAL_WALLET,
-            initialBalanceCents = 256000,
-            iconKey = "alipay",
-            colorHex = 0xFF1677FF,
-            updatedAt = now,
-        ),
-        LedgerAccount(
-            id = "acc_huabei",
-            name = "花呗",
-            type = AccountType.CREDIT_CARD,
-            initialBalanceCents = 0,
-            creditLimitCents = 1500000,
-            iconKey = "credit",
-            colorHex = 0xFF00A6FB,
-            updatedAt = now,
-        ),
-        LedgerAccount(
-            id = "acc_bank_cmb",
-            name = "招商银行储蓄卡",
-            type = AccountType.BANK_CARD,
-            initialBalanceCents = 1850000,
-            iconKey = "bank",
-            colorHex = 0xFFE53935,
-            updatedAt = now,
-        ),
-        LedgerAccount(
-            id = "acc_cash",
-            name = "现金钱包",
-            type = AccountType.CASH,
-            initialBalanceCents = 50000,
-            iconKey = "cash",
-            colorHex = 0xFFF59E0B,
-            updatedAt = now,
-        ),
-    )
+    fun defaultAccounts(now: Long): List<LedgerAccount> = emptyList()
 
     fun defaultCategories(now: Long): List<LedgerCategory> = listOf(
         // Expense categories

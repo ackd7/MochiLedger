@@ -266,6 +266,17 @@ actual object PlatformBridge {
 
     actual fun openNotificationListenerSettings(): Boolean = false
 
+    actual fun openUrl(url: String): Boolean {
+        return runCatching {
+            if (java.awt.Desktop.isDesktopSupported()) {
+                java.awt.Desktop.getDesktop().browse(URI(url))
+                true
+            } else {
+                false
+            }
+        }.getOrDefault(false)
+    }
+
     actual fun defaultDeviceId(): String {
         val host = runCatching { java.net.InetAddress.getLocalHost().hostName }.getOrDefault("desktop")
         return "win-$host-${UUID.randomUUID().toString().take(6)}"
