@@ -53,7 +53,7 @@ jobs:
           path: MochiLedger-android.apk
 
   build-windows:
-    name: Windows Desktop App
+    name: Windows Desktop App (NSIS EXE + Portable Zip)
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -64,13 +64,32 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Build Windows Distributable
         run: .\gradlew.bat :desktopApp:createDistributable --no-daemon
+      - name: Build Windows NSIS Setup EXE
+        shell: pwsh
+        run: |
+          $makensis = Get-Command makensis.exe -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Source
+          if (-not $makensis -and (Test-Path "C:\Program Files (x86)\NSIS\makensis.exe")) {
+            $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          }
+          if (-not $makensis) {
+            choco install nsis -y --no-progress
+            $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
+          }
+          $ver = if ($env:GITHUB_REF_NAME -match '^v(.+)$') { $Matches[1] } else { "1.0.1" }
+          $srcDir = (Resolve-Path "desktopApp\build\compose\binaries\main\app\MochiLedger").Path
+          $outFile = Join-Path (Get-Location).Path "MochiLedger-windows-x64-setup.exe"
+          & $makensis "/INPUTCHARSET" "UTF8" "/DAPP_VERSION=$ver" "/DSOURCE_DIR=$srcDir" "/DOUTPUT_FILE=$outFile" "desktopApp\packaging\windows\installer.nsi"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-Item $outFile | Select-Object Name, Length
       - name: Package Windows Portable Zip
         shell: pwsh
-        run: Compress-Archive -Path desktopApp\build\compose\binaries\main\app\MochiLedger\* -DestinationPath MochiLedger-windows-x64.zip -Force
+        run: Compress-Archive -Path desktopApp\build\compose\binaries\main\app\MochiLedger\* -DestinationPath MochiLedger-windows-x64-portable.zip -Force
       - uses: actions/upload-artifact@v4
         with:
           name: mochiledger-windows-x64
-          path: MochiLedger-windows-x64.zip
+          path: |
+            MochiLedger-windows-x64-setup.exe
+            MochiLedger-windows-x64-portable.zip
 
   publish-release:
     name: Publish GitHub Release
@@ -88,7 +107,8 @@ jobs:
           TAG="${GITHUB_REF_NAME}"
           mkdir -p release-files
           cp release-artifacts/MochiLedger-android.apk "release-files/MochiLedger-${TAG}-android.apk"
-          cp release-artifacts/MochiLedger-windows-x64.zip "release-files/MochiLedger-${TAG}-windows-x64.zip"
+          cp release-artifacts/MochiLedger-windows-x64-setup.exe "release-files/MochiLedger-${TAG}-windows-x64-setup.exe"
+          cp release-artifacts/MochiLedger-windows-x64-portable.zip "release-files/MochiLedger-${TAG}-windows-x64-portable.zip"
           cp release-artifacts/MochiLedger-sync-server.zip "release-files/MochiLedger-${TAG}-sync-server.zip"
           ls -lh release-files
       - name: Create GitHub Release
@@ -104,9 +124,10 @@ jobs:
           跨端开源记账软件（Windows + Android），基于 Kotlin Multiplatform + Compose Multiplatform，融合 **Miuix** 与 **Mochi** 风格 UI。
 
           ### 下载说明
+          - **Windows 安装版（NSIS）**：\`MochiLedger-${TAG}-windows-x64-setup.exe\`
+            - 双击安装，支持中文向导、开始菜单与桌面快捷方式、系统应用列表卸载（卸载时保留 \`%APPDATA%\\MochiLedger\` 本地账本数据）。
+          - **Windows 便携免安装版**：\`MochiLedger-${TAG}-windows-x64-portable.zip\`
           - **Android 客户端（含 LSPosed 自动记账模块）**：\`MochiLedger-${TAG}-android.apk\`
             - 支持在 LSPosed 中勾选微信 (\`com.tencent.mm\`) 与支付宝 (\`com.eg.android.AlipayGphone\`) 自动记账，亦支持无 Root 系统通知监听降级方案。
-          - **Windows 桌面端（免安装便携版）**：\`MochiLedger-${TAG}-windows-x64.zip\`
-            - 解压后直接运行 \`MochiLedger.exe\`，与 Android 端共享统一 SQLite / \`.mochi.json\` 数据格式。
           - **自建同步服务端（Ktor）**：\`MochiLedger-${TAG}-sync-server.zip\`
             - 亦可通过仓库内 \`syncServer/docker-compose.yml\` 一键 Docker 部署，支持 WebDAV 与自建服务器双向合并同步。"
