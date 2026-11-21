@@ -26,7 +26,7 @@ kotlin {
     if (hasAndroidSdk) {
         extensions.configure(KotlinMultiplatformAndroidLibraryTarget::class.java) {
             namespace = "com.mochiledger.shared"
-            compileSdk = 36
+            compileSdk = 37
             minSdk = 26
         }
     }
