@@ -1,3 +1,5 @@
+import com.android.build.api.dsl.KotlinMultiplatformAndroidLibraryTarget
+
 plugins {
     alias(libs.plugins.kotlinMultiplatform)
     alias(libs.plugins.kotlinSerialization)
@@ -22,12 +24,10 @@ kotlin {
     }
 
     if (hasAndroidSdk) {
-        extensions.findByName("android")?.let { androidExt ->
-            // Configured via AGP 9 KMP library extension when Android SDK is available
-            val clazz = androidExt.javaClass
-            clazz.getMethod("setNamespace", String::class.java).invoke(androidExt, "com.mochiledger.shared")
-            clazz.getMethod("setCompileSdk", Int::class.javaPrimitiveType).invoke(androidExt, 36)
-            clazz.getMethod("setMinSdk", Int::class.javaPrimitiveType).invoke(androidExt, 26)
+        extensions.configure(KotlinMultiplatformAndroidLibraryTarget::class.java) {
+            namespace = "com.mochiledger.shared"
+            compileSdk = 36
+            minSdk = 26
         }
     }
 
@@ -43,18 +43,14 @@ kotlin {
             api(libs.kotlinx.datetime)
         }
 
-        val desktopMain by getting {
-            dependencies {
-                implementation(libs.sqlite.jdbc)
-                implementation(libs.kotlinx.coroutines.swing)
-            }
+        getByName("desktopMain").dependencies {
+            implementation(libs.sqlite.jdbc)
+            implementation(libs.kotlinx.coroutines.swing)
         }
 
-        val desktopTest by getting {
-            dependencies {
-                implementation(libs.kotlin.test)
-                implementation(libs.junit)
-            }
+        getByName("desktopTest").dependencies {
+            implementation(libs.kotlin.test)
+            implementation(libs.junit)
         }
 
         if (hasAndroidSdk) {

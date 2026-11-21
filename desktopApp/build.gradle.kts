@@ -14,11 +14,9 @@ kotlin {
     }
 
     sourceSets {
-        val desktopMain by getting {
-            dependencies {
-                implementation(projects.shared)
-                implementation(compose.desktop.currentOs)
-            }
+        getByName("desktopMain").dependencies {
+            implementation(projects.shared)
+            implementation(compose.desktop.currentOs)
         }
     }
 }
