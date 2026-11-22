@@ -3,6 +3,7 @@ package com.mochiledger.shared.ui.screens
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -189,7 +191,93 @@ fun AnalyticsScreen(state: LedgerUiState, bottomInset: Dp = 0.dp) {
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 24.dp + bottomInset),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        // Top centered type filter (支出 / 收入 / 全部)
+        // Top Date Selector Box (placed directly above 支出 / 收入 / 全部)
+        item(key = "top_date_selector") {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    MochiChip("◀", false) {
+                        when (periodMode) {
+                            StatsPeriodMode.DAY -> {
+                                if (selectedDay > 1) {
+                                    selectedDay -= 1
+                                } else {
+                                    if (selectedMonth == 1) {
+                                        selectedYear -= 1
+                                        selectedMonth = 12
+                                    } else {
+                                        selectedMonth -= 1
+                                    }
+                                    selectedDay = daysInMonth(selectedYear, selectedMonth)
+                                }
+                            }
+                            StatsPeriodMode.MONTH -> {
+                                if (selectedMonth == 1) {
+                                    selectedYear -= 1
+                                    selectedMonth = 12
+                                } else {
+                                    selectedMonth -= 1
+                                }
+                            }
+                            StatsPeriodMode.YEAR -> selectedYear -= 1
+                        }
+                    }
+                    Row(
+                        modifier = Modifier
+                            .clip(mochiShape(14.dp))
+                            .background(MiuixTheme.colorScheme.surface)
+                            .border(1.dp, MiuixTheme.colorScheme.outline.copy(alpha = 0.35f), mochiShape(14.dp))
+                            .clickable { showDatePicker = true }
+                            .padding(horizontal = 16.dp, vertical = 9.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        FlatIcon("calendar", MiuixTheme.colorScheme.primary, size = 16.dp)
+                        Text(
+                            text = "$dateDisplayText ▾",
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 14.sp,
+                            maxLines = 1,
+                        )
+                    }
+                    MochiChip("▶", false) {
+                        when (periodMode) {
+                            StatsPeriodMode.DAY -> {
+                                val maxD = daysInMonth(selectedYear, selectedMonth)
+                                if (selectedDay < maxD) {
+                                    selectedDay += 1
+                                } else {
+                                    if (selectedMonth == 12) {
+                                        selectedYear += 1
+                                        selectedMonth = 1
+                                    } else {
+                                        selectedMonth += 1
+                                    }
+                                    selectedDay = 1
+                                }
+                            }
+                            StatsPeriodMode.MONTH -> {
+                                if (selectedMonth == 12) {
+                                    selectedYear += 1
+                                    selectedMonth = 1
+                                } else {
+                                    selectedMonth += 1
+                                }
+                            }
+                            StatsPeriodMode.YEAR -> selectedYear += 1
+                        }
+                    }
+                }
+            }
+        }
+
+        // Centered type filter (支出 / 收入 / 全部) directly below Date Selector
         item(key = "header") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -213,105 +301,13 @@ fun AnalyticsScreen(state: LedgerUiState, bottomInset: Dp = 0.dp) {
             }
         }
 
-        // Main Summary & Donut Card with Day/Month/Year Selector
+        // Main Summary & Donut Card
         item(key = "donut") {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    // Period mode pills (按日 / 按月 / 按年)
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        StatsPeriodMode.entries.forEach { mode ->
-                            MochiChip(mode.label, periodMode == mode) {
-                                periodMode = mode
-                                val maxD = daysInMonth(selectedYear, selectedMonth)
-                                if (selectedDay > maxD) selectedDay = maxD
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(10.dp))
-
-                    // Unified Date Stepper & Picker Trigger
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        MochiChip("◀", false) {
-                            when (periodMode) {
-                                StatsPeriodMode.DAY -> {
-                                    if (selectedDay > 1) {
-                                        selectedDay -= 1
-                                    } else {
-                                        if (selectedMonth == 1) {
-                                            selectedYear -= 1
-                                            selectedMonth = 12
-                                        } else {
-                                            selectedMonth -= 1
-                                        }
-                                        selectedDay = daysInMonth(selectedYear, selectedMonth)
-                                    }
-                                }
-                                StatsPeriodMode.MONTH -> {
-                                    if (selectedMonth == 1) {
-                                        selectedYear -= 1
-                                        selectedMonth = 12
-                                    } else {
-                                        selectedMonth -= 1
-                                    }
-                                }
-                                StatsPeriodMode.YEAR -> selectedYear -= 1
-                            }
-                        }
-                        Row(
-                            modifier = Modifier
-                                .clip(mochiShape(14.dp))
-                                .background(MiuixTheme.colorScheme.surfaceContainer)
-                                .border(1.dp, MiuixTheme.colorScheme.outline.copy(alpha = 0.35f), mochiShape(14.dp))
-                                .clickable { showDatePicker = true }
-                                .padding(horizontal = 14.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        ) {
-                            FlatIcon("calendar", MiuixTheme.colorScheme.primary, size = 15.dp)
-                            Text(
-                                text = dateDisplayText,
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp,
-                            )
-                        }
-                        MochiChip("▶", false) {
-                            when (periodMode) {
-                                StatsPeriodMode.DAY -> {
-                                    val maxD = daysInMonth(selectedYear, selectedMonth)
-                                    if (selectedDay < maxD) {
-                                        selectedDay += 1
-                                    } else {
-                                        if (selectedMonth == 12) {
-                                            selectedYear += 1
-                                            selectedMonth = 1
-                                        } else {
-                                            selectedMonth += 1
-                                        }
-                                        selectedDay = 1
-                                    }
-                                }
-                                StatsPeriodMode.MONTH -> {
-                                    if (selectedMonth == 12) {
-                                        selectedYear += 1
-                                        selectedMonth = 1
-                                    } else {
-                                        selectedMonth += 1
-                                    }
-                                }
-                                StatsPeriodMode.YEAR -> selectedYear += 1
-                            }
-                        }
-                    }
-
-                    Spacer(Modifier.height(18.dp))
-
                     CategoryDonutChart(
                         stats = activeStats,
                         totalLabel = totalLabel,
@@ -383,10 +379,12 @@ fun AnalyticsScreen(state: LedgerUiState, bottomInset: Dp = 0.dp) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(vertical = 12.dp)) {
                     if (activeStats.isNotEmpty()) {
-                        FlowRow(
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 16.dp, vertical = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
                         ) {
                             MochiChip("全部分类", effectiveCategoryId == null) {
                                 selectedCategoryId = null

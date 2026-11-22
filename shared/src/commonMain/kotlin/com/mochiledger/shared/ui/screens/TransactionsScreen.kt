@@ -456,16 +456,40 @@ private fun TransactionEditorDialog(
                 TextField(
                     value = merchant,
                     onValueChange = { merchant = it },
-                    label = "商户 / 对象（如 星巴克、美团）",
+                    label = "收款人 / 商户（如 瑞幸咖啡、张三）",
                     modifier = Modifier.fillMaxWidth(),
                 )
 
                 TextField(
                     value = note,
                     onValueChange = { note = it },
-                    label = "备注（可选）",
+                    label = "备注 / 买了什么（可选）",
                     modifier = Modifier.fillMaxWidth(),
                 )
+
+                if (!initial?.rawAutoMessage.isNullOrBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(mochiShape(12.dp))
+                            .background(MiuixTheme.colorScheme.surfaceContainer)
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                            Text(
+                                text = "原始支付信息",
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                            Text(
+                                text = initial?.rawAutoMessage.orEmpty(),
+                                fontSize = 12.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
+                    }
+                }
 
                 if (txType != TransactionType.TRANSFER) {
                     SmallTitle(text = "分类")

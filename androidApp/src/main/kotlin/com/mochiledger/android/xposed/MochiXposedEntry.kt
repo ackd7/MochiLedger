@@ -2,6 +2,7 @@ package com.mochiledger.android.xposed
 
 import android.app.Activity
 import android.app.AndroidAppHelper
+import android.app.Dialog
 import android.app.Notification
 import android.app.NotificationManager
 import android.content.ComponentName
@@ -35,10 +36,12 @@ class MochiXposedEntry : IXposedHookLoadPackage {
             WECHAT_PACKAGE -> {
                 hookPaymentNotifications(lpparam, WECHAT_PACKAGE)
                 hookPaymentSuccessUi(WECHAT_PACKAGE)
+                hookPaymentDialogs(WECHAT_PACKAGE)
             }
             ALIPAY_PACKAGE -> {
                 hookPaymentNotifications(lpparam, ALIPAY_PACKAGE)
                 hookPaymentSuccessUi(ALIPAY_PACKAGE)
+                hookPaymentDialogs(ALIPAY_PACKAGE)
             }
         }
     }
@@ -113,6 +116,73 @@ class MochiXposedEntry : IXposedHookLoadPackage {
         }
     }
 
+    private fun hookPaymentDialogs(targetPackage: String) {
+        runCatching {
+            XposedHelpers.findAndHookMethod(
+                Dialog::class.java,
+                "show",
+                object : XC_MethodHook() {
+                    override fun afterHookedMethod(param: MethodHookParam) {
+                        val dialog = param.thisObject as? Dialog ?: return
+                        val handler = Handler(Looper.getMainLooper())
+                        handler.postDelayed(
+                            {
+                                if (dialog.isShowing) {
+                                    val root = dialog.window?.decorView ?: return@postDelayed
+                                    val texts = ArrayList<String>(32)
+                                    collectVisibleTexts(root, texts, maxItems = 32)
+                                    if (texts.isEmpty()) return@postDelayed
+                                    cachePayeeFromTexts(targetPackage, texts)
+                                }
+                            },
+                            350L,
+                        )
+                    }
+                },
+            )
+            XposedBridge.log("$TAG: Hooked Dialog.show cashier payee memory in $targetPackage")
+        }.onFailure {
+            XposedBridge.log("$TAG: Dialog hook failed in $targetPackage: ${it.message}")
+        }
+    }
+
+    private fun cachePayeeFromTexts(sourcePackage: String, texts: List<String>) {
+        var candidate = ""
+        for (i in texts.indices) {
+            val cur = texts[i].trim().trimEnd(':', '：')
+            val next = texts.getOrNull(i + 1)?.trim().orEmpty()
+            if (cur in MERCHANT_LABELS && next.length in 2..36) {
+                candidate = next
+                break
+            }
+            val inline = INLINE_PAYEE_REGEX.find(cur)?.groupValues?.getOrNull(1)?.trim()
+            if (!inline.isNullOrBlank() && inline.length in 2..32) {
+                candidate = inline
+                break
+            }
+        }
+        if (candidate.isEmpty()) {
+            val amountIdx = texts.indexOfFirst { UI_AMOUNT_REGEX.containsMatchIn(it) }
+            if (amountIdx > 0) {
+                val prev = texts[amountIdx - 1].trim()
+                if (prev.length in 2..30 &&
+                    UI_SUCCESS_KEYWORDS.none { prev.contains(it) } &&
+                    prev !in NOISE_LABELS
+                ) {
+                    candidate = prev
+                }
+            }
+        }
+        if (candidate.isNotBlank() && candidate !in NOISE_LABELS) {
+            recentPayeeByPkg[sourcePackage] = candidate to System.currentTimeMillis()
+        }
+    }
+
+    private fun lookupRecentPayee(sourcePackage: String): String {
+        val pair = recentPayeeByPkg[sourcePackage] ?: return ""
+        return if (System.currentTimeMillis() - pair.second <= 60_000L) pair.first else ""
+    }
+
     private fun isPaymentScreen(className: String): Boolean {
         val lower = className.lowercase()
         return PAYMENT_ACTIVITY_HINTS.any { lower.contains(it) }
@@ -124,6 +194,9 @@ class MochiXposedEntry : IXposedHookLoadPackage {
             val texts = ArrayList<String>(48)
             collectVisibleTexts(root, texts, maxItems = 48)
             if (texts.isEmpty()) return
+
+            // Always cache payee from cashier/payment screens before checking success keywords
+            cachePayeeFromTexts(sourcePackage, texts)
 
             val joined = texts.joinToString(" ")
             val hasSuccessSignal = UI_SUCCESS_KEYWORDS.any { joined.contains(it) }
@@ -138,7 +211,7 @@ class MochiXposedEntry : IXposedHookLoadPackage {
             if (now - lastSent < 10_000L) return
             recentUiBroadcasts[dedupeKey] = now
 
-            val structured = buildStructuredSummary(texts, joined)
+            val structured = buildStructuredSummary(sourcePackage, texts, joined)
             val title = if (sourcePackage == WECHAT_PACKAGE) "微信支付" else "支付宝交易提醒"
             sendToMochiLedger(
                 sourcePackage = sourcePackage,
@@ -155,7 +228,7 @@ class MochiXposedEntry : IXposedHookLoadPackage {
      * Extracts structured merchant, product/item description, and payment method from sequential
      * TextView nodes on WeChat/Alipay payment result and bill detail screens.
      */
-    private fun buildStructuredSummary(texts: List<String>, fallbackJoined: String): String {
+    private fun buildStructuredSummary(sourcePackage: String, texts: List<String>, fallbackJoined: String): String {
         var merchant = ""
         var product = ""
         var payMethod = ""
@@ -172,19 +245,21 @@ class MochiXposedEntry : IXposedHookLoadPackage {
             }
         }
 
-        // Heuristic: on WeChat/Alipay payment result screens, the text right after "支付成功"/"付款成功"
-        // or right before the ¥ amount is often the merchant name.
         if (merchant.isEmpty()) {
             val amountIdx = texts.indexOfFirst { UI_AMOUNT_REGEX.containsMatchIn(it) }
             if (amountIdx > 0) {
                 val prev = texts[amountIdx - 1].trim()
                 if (prev.length in 2..30 &&
                     UI_SUCCESS_KEYWORDS.none { prev.contains(it) } &&
-                    prev !in listOf("完成", "返回商家", "查看账单", "支付方式", "付款方式")
+                    prev !in NOISE_LABELS
                 ) {
                     merchant = prev
                 }
             }
+        }
+
+        if (merchant.isEmpty()) {
+            merchant = lookupRecentPayee(sourcePackage)
         }
 
         val prefixParts = mutableListOf<String>()
@@ -227,10 +302,17 @@ class MochiXposedEntry : IXposedHookLoadPackage {
             val merged = "$title $content"
             if (!looksLikePayment(merged)) return
 
+            val cachedPayee = lookupRecentPayee(sourcePackage)
+            val enrichedContent = if (cachedPayee.isNotBlank() && !merged.contains(cachedPayee)) {
+                "商户：$cachedPayee $content"
+            } else {
+                content
+            }
+
             sendToMochiLedger(
                 sourcePackage = sourcePackage,
                 title = title,
-                content = content,
+                content = enrichedContent,
                 channelSource = "LSPOSED",
             )
         }.onFailure {
@@ -275,6 +357,13 @@ class MochiXposedEntry : IXposedHookLoadPackage {
         const val EXTRA_TIMESTAMP = "extra_timestamp"
 
         private val recentUiBroadcasts = ConcurrentHashMap<String, Long>()
+        private val recentPayeeByPkg = ConcurrentHashMap<String, Pair<String, Long>>()
+
+        private val INLINE_PAYEE_REGEX = Regex("""(?:付款给|转账给|向)\s*([^\s，,。：:]{2,28})""")
+        private val NOISE_LABELS = setOf(
+            "完成", "返回商家", "查看账单", "支付方式", "付款方式", "确认支付", "立即付款",
+            "微信支付", "支付宝", "使用密码", "指纹支付", "面容支付", "零钱", "花呗", "付款给个人",
+        )
 
         private val PAYMENT_HINTS = listOf(
             "微信支付", "支付宝", "付款", "收款", "消费", "支出", "花呗", "余额宝", "转账", "退款", "扣款", "到账", "元", "¥", "￥",

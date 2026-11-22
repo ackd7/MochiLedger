@@ -182,7 +182,7 @@ fun AppSettingsScreen(
 
             SettingsSubPage.AUTO_TRACK -> {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    IconBackHeader("自动记账 (LSPosed)") { subPage = SettingsSubPage.MAIN }
+                    IconBackHeader("自动记账") { subPage = SettingsSubPage.MAIN }
                     AutoTrackScreen(
                         state = state,
                         onUpdateSettings = repository::updateAutoTrackSettings,
@@ -355,8 +355,8 @@ fun AppSettingsScreen(
                                 if (supportsLsposed) {
                                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                                     ArrowPreference(
-                                        title = "自动记账（LSPosed / 通知监听）",
-                                        summary = "监听微信与支付宝支付通知、分类规则与模拟器",
+                                        title = "自动记账",
+                                        summary = "微信与支付宝自动识别、权限体检与分类规则",
                                         onClick = { subPage = SettingsSubPage.AUTO_TRACK },
                                     )
                                 }

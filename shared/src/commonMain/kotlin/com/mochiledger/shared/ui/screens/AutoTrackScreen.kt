@@ -2,11 +2,10 @@ package com.mochiledger.shared.ui.screens
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -16,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -24,18 +24,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.window.Dialog
 import com.mochiledger.shared.data.LedgerUiState
 import com.mochiledger.shared.model.AutoTrackRule
 import com.mochiledger.shared.model.AutoTrackSettings
 import com.mochiledger.shared.model.ParsedPayment
 import com.mochiledger.shared.model.PaymentChannel
+import com.mochiledger.shared.model.TransactionType
 import com.mochiledger.shared.model.formatCents
 import com.mochiledger.shared.platform.PlatformBridge
 import com.mochiledger.shared.ui.components.MochiChip
@@ -53,7 +55,6 @@ import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AutoTrackScreen(
     state: LedgerUiState,
@@ -68,8 +69,11 @@ fun AutoTrackScreen(
     var runtime by remember { mutableStateOf(PlatformBridge.getAutoTrackRuntimeStatus()) }
     val settings = state.metadata.autoTrack
     val categoryMap = remember(state.categories) { state.categories.associateBy { it.id } }
+    val expenseCategories = remember(state.categories) {
+        state.activeCategories.filter { it.type == TransactionType.EXPENSE }
+    }
 
-    // Auto-refresh permission health status every 2s so returning from Android system settings updates immediately
+    // Auto-refresh permission status every 2s so returning from Android settings updates immediately
     LaunchedEffect(Unit) {
         if (!runtime.supportsLsposed) return@LaunchedEffect
         while (true) {
@@ -86,177 +90,59 @@ fun AutoTrackScreen(
     var newRuleName by remember { mutableStateOf("") }
     var newRuleKeyword by remember { mutableStateOf("") }
     var newRuleCategoryId by remember { mutableStateOf("cat_food") }
-    var conflictTargetScheme by remember { mutableStateOf<String?>(null) } // "NOTIFICATION" or "LSPOSED"
 
+    // Only check LSPosed permission when LSPosed scheme is enabled; only check NotificationListener when regular scheme is enabled
     val missingPermissionsCount = if (runtime.supportsLsposed) {
-        listOf(
-            runtime.lsposedActive || runtime.notificationListenerEnabled,
-            runtime.overlayPermissionGranted || !settings.floatingConfirmEnabled,
-            runtime.batteryOptimizationIgnored,
-            runtime.postNotificationsGranted,
-        ).count { !it }
+        buildList {
+            if (settings.useLsposedMode) add(runtime.lsposedActive)
+            if (settings.fallbackNotificationListener) add(runtime.notificationListenerEnabled)
+            if (settings.floatingConfirmEnabled) add(runtime.overlayPermissionGranted)
+            add(runtime.batteryOptimizationIgnored)
+            add(runtime.postNotificationsGranted)
+        }.count { !it }
     } else {
         0
     }
 
+    val lsposedLockedByRegular = settings.fallbackNotificationListener && !settings.useLsposedMode
+    val regularLockedByLsposed = settings.useLsposedMode && !settings.fallbackNotificationListener
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 24.dp + bottomInset),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp + bottomInset),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        // LSPosed Status Hero
-        item(key = "lsposed_status") {
-            val statusColor = when {
-                runtime.lsposedActive -> MochiColors.Income
-                runtime.supportsLsposed -> MochiColors.WarningAmber
-                else -> MiuixTheme.colorScheme.primary
-            }
-            val statusTitle = when {
-                runtime.lsposedActive -> "LSPosed 模块已激活"
-                runtime.supportsLsposed -> "LSPosed 模块未激活（请在 LSPosed 中勾选微信/支付宝）"
-                else -> "当前为桌面端（自动记账规则与 Android 互通同步）"
-            }
-            val statusDesc = when {
-                runtime.lsposedActive -> "已启用双层 Hook：微信/支付宝通知拦截 + 支付成功页 UI 捕获（即使关闭通知推送也能自动入账）。"
-                runtime.supportsLsposed -> "也可开启下方「系统通知监听」作为无 Root 降级方案，或通过 mochiledger://add 协议接入 AutoAccounting。"
-                else -> "当前为桌面端，可在 Android 端使用 LSPosed 与 AutoAccounting 协议自动记账。"
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clip(mochiShape(22.dp))
-                    .background(statusColor.copy(alpha = 0.12f))
-                    .border(1.dp, statusColor.copy(alpha = 0.35f), mochiShape(22.dp))
-                    .padding(18.dp),
-            ) {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MochiGlassBadge(text = runtime.platformName, color = statusColor)
-                        if (runtime.supportsLsposed) {
-                            MochiGlassBadge(
-                                text = if (runtime.lsposedActive) "Hook Active" else "Hook Inactive",
-                                color = statusColor,
-                            )
-                        }
-                    }
-                    Text(statusTitle, fontSize = 16.sp, fontWeight = FontWeight.Bold, color = statusColor)
-                    Text(statusDesc, fontSize = 13.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-                    if (runtime.supportsLsposed && !runtime.notificationListenerEnabled) {
-                        Spacer(Modifier.height(4.dp))
-                        TextButton(
-                            text = "打开系统通知使用权设置（备用监听）",
-                            onClick = { PlatformBridge.openNotificationListenerSettings() },
-                        )
-                    }
-                }
-            }
-        }
-
-        // Permission Health Check Panel (Android)
-        if (runtime.supportsLsposed) {
-            item(key = "permission_health") {
-                SmallTitle(
-                    text = if (missingPermissionsCount == 0) {
-                        "权限健康体检（全部就绪）"
-                    } else {
-                        "权限健康体检（缺少 $missingPermissionsCount 项，请及时开启防失效）"
-                    },
-                )
-                Card(modifier = Modifier.fillMaxWidth()) {
-                    Column(
-                        modifier = Modifier.padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        PermissionCheckRow(
-                            title = "LSPosed 深度抓取（方案 1）",
-                            desc = if (runtime.lsposedActive) "已激活，可自动抓取支付页商户与商品明细" else "未激活（可在 LSPosed 勾选微信/支付宝，或用下方通知监听替代）",
-                            granted = runtime.lsposedActive,
-                            optional = runtime.notificationListenerEnabled,
-                            actionLabel = null,
-                            onAction = {},
-                        )
-                        HorizontalDivider()
-                        PermissionCheckRow(
-                            title = "系统通知使用权（免 Root 监听）",
-                            desc = if (runtime.notificationListenerEnabled) "已授权，支持微信/支付宝通知自动记账" else "未授权，无 LSPosed 时必须开启此权限",
-                            granted = runtime.notificationListenerEnabled,
-                            optional = runtime.lsposedActive,
-                            actionLabel = "去开启",
-                            onAction = { PlatformBridge.openNotificationListenerSettings() },
-                        )
-                        HorizontalDivider()
-                        PermissionCheckRow(
-                            title = "悬浮窗权限（付款后 1 秒备注确认条）",
-                            desc = if (runtime.overlayPermissionGranted) "已授权，付款后可弹出快捷标签卡片补全买了什么" else "未授权，开启后即可在付款后一键点选早餐/午饭/超市标签",
-                            granted = runtime.overlayPermissionGranted,
-                            optional = !settings.floatingConfirmEnabled,
-                            actionLabel = "去授权",
-                            onAction = { PlatformBridge.openOverlayPermissionSettings() },
-                        )
-                        HorizontalDivider()
-                        PermissionCheckRow(
-                            title = "后台电池优化白名单（防杀后台）",
-                            desc = if (runtime.batteryOptimizationIgnored) "已加入无限制白名单，后台监听更稳定" else "未开启，小米/华为等系统可能会清理后台导致漏记",
-                            granted = runtime.batteryOptimizationIgnored,
-                            optional = false,
-                            actionLabel = "去设置",
-                            onAction = { PlatformBridge.openBatteryOptimizationSettings() },
-                        )
-                        HorizontalDivider()
-                        PermissionCheckRow(
-                            title = "记账结果通知权限",
-                            desc = if (runtime.postNotificationsGranted) "已允许发送自动记账提醒" else "未开启，自动记账后无法收到通知提醒",
-                            granted = runtime.postNotificationsGranted,
-                            optional = false,
-                            actionLabel = "去开启",
-                            onAction = { PlatformBridge.openAppNotificationSettings() },
-                        )
-                        TextButton(
-                            text = "重新检测权限状态",
-                            onClick = {
-                                runtime = PlatformBridge.getAutoTrackRuntimeStatus()
-                                onShowMessage("已刷新自动记账权限状态")
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                    }
-                }
-            }
-        }
-
         // Master Switch & Floating Confirm
         item(key = "master_switches") {
-            SmallTitle(text = "总开关与快捷确认")
+            SmallTitle(text = "基础设置")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     SwitchPreference(
                         title = "启用自动记账",
-                        summary = "总开关，关闭后暂停所有自动识别通道",
+                        summary = "开启后自动识别微信与支付宝交易",
                         checked = settings.enabled,
                         onCheckedChange = { onUpdateSettings(settings.copy(enabled = it)) },
                     )
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     SwitchPreference(
-                        title = "付款后弹出轻量悬浮确认条",
-                        summary = "自动记账后顶部弹出小卡片，1 秒点选标签或补充买了什么（免 Root 可用）",
+                        title = "付款后悬浮确认条",
+                        summary = "顶部弹出快捷卡片，1 秒补全备注",
                         checked = settings.floatingConfirmEnabled,
                         onCheckedChange = { onUpdateSettings(settings.copy(floatingConfirmEnabled = it)) },
                     )
                     if (settings.floatingConfirmEnabled) {
-                        Column(
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .horizontalScroll(rememberScrollState())
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text("悬浮条自动收起倒计时", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                            FlowRow(
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                listOf(5, 6, 10, 15).forEach { sec ->
-                                    MochiChip("${sec} 秒", settings.floatingConfirmSeconds == sec) {
-                                        onUpdateSettings(settings.copy(floatingConfirmSeconds = sec))
-                                    }
+                            Text("停留时长", fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                            listOf(5, 6, 10, 15).forEach { sec ->
+                                MochiChip("${sec}秒", settings.floatingConfirmSeconds == sec) {
+                                    onUpdateSettings(settings.copy(floatingConfirmSeconds = sec))
                                 }
                             }
                         }
@@ -265,52 +151,46 @@ fun AutoTrackScreen(
             }
         }
 
-        // Scheme 1: Root / LSPosed Deep Hook
+        // Scheme 1: Root / LSPosed (mutually exclusive with Regular scheme; grayed & locked when Regular is active)
         item(key = "scheme_lsposed") {
-            SmallTitle(text = "方案一：Root / LSPosed 深度监听（与方案二互斥）")
-            Card(modifier = Modifier.fillMaxWidth()) {
+            SmallTitle(text = "Root / LSPosed 方案")
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .alpha(if (lsposedLockedByRegular) 0.48f else 1f),
+            ) {
                 Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        MochiGlassBadge("需要 LSPosed", MochiColors.Income)
-                        Text("支持抓取支付成功页商户与商品明细", fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-                    }
                     SwitchPreference(
-                        title = "启用 LSPosed 深度监听",
-                        summary = "开启后将自动关闭「免 Root 通知监听」，避免重复记账",
+                        title = "启用 LSPosed 监听",
+                        summary = if (lsposedLockedByRegular) {
+                            "已开启常规方案，请先关闭常规方案"
+                        } else {
+                            "支持读取收银台收款人、商品明细与支付页"
+                        },
                         checked = settings.useLsposedMode,
+                        enabled = !lsposedLockedByRegular,
                         onCheckedChange = { enable ->
-                            if (enable) {
-                                val hadFallback = settings.fallbackNotificationListener
-                                onUpdateSettings(
-                                    settings.copy(
-                                        useLsposedMode = true,
-                                        fallbackNotificationListener = false,
-                                    ),
-                                )
-                                if (hadFallback) {
-                                    onShowMessage("已启用 LSPosed 方案，并自动关闭了免 Root 通知监听")
-                                }
-                            } else {
-                                onUpdateSettings(settings.copy(useLsposedMode = false))
-                            }
+                            if (lsposedLockedByRegular) return@SwitchPreference
+                            onUpdateSettings(
+                                settings.copy(
+                                    useLsposedMode = enable,
+                                    fallbackNotificationListener = if (enable) false else settings.fallbackNotificationListener,
+                                ),
+                            )
                         },
                     )
                     if (settings.useLsposedMode) {
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                         SwitchPreference(
-                            title = "监听微信支付 (com.tencent.mm)",
-                            summary = "识别微信付款、转账、红包与支付页商品明细",
+                            title = "微信支付",
+                            summary = "捕获微信收款人、通知与支付成功页",
                             checked = settings.hookWeChat,
                             onCheckedChange = { onUpdateSettings(settings.copy(hookWeChat = it)) },
                         )
                         HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                         SwitchPreference(
-                            title = "监听支付宝 (com.eg.android.AlipayGphone)",
-                            summary = "识别支付宝交易提醒、花呗消费与支付页商品明细",
+                            title = "支付宝",
+                            summary = "捕获支付宝收款人、通知与支付成功页",
                             checked = settings.hookAlipay,
                             onCheckedChange = { onUpdateSettings(settings.copy(hookAlipay = it)) },
                         )
@@ -319,79 +199,126 @@ fun AutoTrackScreen(
             }
         }
 
-        // Scheme 2: Non-Root Notification Listener
-        item(key = "scheme_notification") {
-            SmallTitle(text = "方案二：免 Root 系统通知监听（与方案一互斥）")
-            Card(modifier = Modifier.fillMaxWidth()) {
+        // Scheme 2: Regular Non-Root Scheme (grayed & locked when LSPosed is active)
+        item(key = "scheme_regular") {
+            SmallTitle(text = "常规方案")
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .alpha(if (regularLockedByLsposed) 0.48f else 1f),
+            ) {
                 Column {
-                    Row(
-                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        MochiGlassBadge("免 Root", MiuixTheme.colorScheme.primary)
-                        Text("通过系统通知栏监听微信/支付宝收付款提醒", fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
-                    }
                     SwitchPreference(
-                        title = "启用免 Root 系统通知监听",
-                        summary = if (settings.useLsposedMode) {
-                            "当前已启用 LSPosed 方案；若继续开启将提示切换"
+                        title = "启用系统通知监听",
+                        summary = if (regularLockedByLsposed) {
+                            "已开启 LSPosed 方案，请先关闭 LSPosed"
                         } else {
-                            "无需 Root，开启系统通知使用权即可自动记账"
+                            "免 Root，通过系统通知栏识别收付款"
                         },
                         checked = settings.fallbackNotificationListener,
+                        enabled = !regularLockedByLsposed,
                         onCheckedChange = { enable ->
-                            if (enable && settings.useLsposedMode) {
-                                conflictTargetScheme = "NOTIFICATION"
-                            } else {
-                                onUpdateSettings(settings.copy(fallbackNotificationListener = enable))
-                            }
+                            if (regularLockedByLsposed) return@SwitchPreference
+                            onUpdateSettings(
+                                settings.copy(
+                                    fallbackNotificationListener = enable,
+                                    useLsposedMode = if (enable) false else settings.useLsposedMode,
+                                ),
+                            )
                         },
                     )
                 }
             }
         }
 
-        // Open DeepLink Integration for AutoAccounting / Tasker
-        item(key = "deeplink_protocol") {
-            SmallTitle(text = "开放协议（兼容 AutoAccounting / Tasker）")
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("静默记账 URI 协议", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                    Text(
-                        text = "mochiledger://add?type=expense&amount=32.50&merchant=星巴克&category=餐饮美食&account=支付宝&remark=拿铁",
-                        fontSize = 12.sp,
-                        color = MiuixTheme.colorScheme.primary,
-                    )
-                    Text(
-                        text = "支持 type (expense/income/transfer)、amount/money、merchant/shop、category/cat、account、remark/note 参数，调用后后台静默入账不打断当前页面。",
-                        fontSize = 12.sp,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                    )
+        // Clean Permission Health Check (Android only; only checks permissions relevant to enabled schemes)
+        if (runtime.supportsLsposed) {
+            item(key = "permission_health") {
+                SmallTitle(
+                    text = if (missingPermissionsCount == 0) "权限体检 · 已就绪" else "权限体检 · 缺 $missingPermissionsCount 项",
+                )
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        var hasPrevRow = false
+                        if (settings.useLsposedMode) {
+                            PermissionCheckRow(
+                                title = "LSPosed 模块",
+                                desc = if (runtime.lsposedActive) "已激活" else "请在 LSPosed 勾选微信与支付宝",
+                                granted = runtime.lsposedActive,
+                                actionLabel = null,
+                                onAction = {},
+                            )
+                            hasPrevRow = true
+                        }
+                        if (settings.fallbackNotificationListener) {
+                            if (hasPrevRow) HorizontalDivider()
+                            PermissionCheckRow(
+                                title = "通知使用权",
+                                desc = if (runtime.notificationListenerEnabled) "已授权" else "需开启系统通知读取权限",
+                                granted = runtime.notificationListenerEnabled,
+                                actionLabel = "去开启",
+                                onAction = { PlatformBridge.openNotificationListenerSettings() },
+                            )
+                            hasPrevRow = true
+                        }
+                        if (settings.floatingConfirmEnabled) {
+                            if (hasPrevRow) HorizontalDivider()
+                            PermissionCheckRow(
+                                title = "悬浮窗权限",
+                                desc = if (runtime.overlayPermissionGranted) "已授权" else "用于付款后弹出快捷备注条",
+                                granted = runtime.overlayPermissionGranted,
+                                actionLabel = "去授权",
+                                onAction = { PlatformBridge.openOverlayPermissionSettings() },
+                            )
+                            hasPrevRow = true
+                        }
+                        if (hasPrevRow) HorizontalDivider()
+                        PermissionCheckRow(
+                            title = "后台电池优化",
+                            desc = if (runtime.batteryOptimizationIgnored) "已加入白名单" else "建议设为无限制防杀后台",
+                            granted = runtime.batteryOptimizationIgnored,
+                            actionLabel = "去设置",
+                            onAction = { PlatformBridge.openBatteryOptimizationSettings() },
+                        )
+                        HorizontalDivider()
+                        PermissionCheckRow(
+                            title = "记账通知提醒",
+                            desc = if (runtime.postNotificationsGranted) "已开启" else "用于推送自动记账结果",
+                            granted = runtime.postNotificationsGranted,
+                            actionLabel = "去开启",
+                            onAction = { PlatformBridge.openAppNotificationSettings() },
+                        )
+                    }
                 }
             }
         }
 
-        // Interactive Payment Notification Simulator
+        // Interactive Payment Simulator (clean single-line buttons + horizontal scrollable examples)
         item(key = "simulator") {
-            SmallTitle(text = "LSPosed / 通知解析模拟器（支持实时入账测试）")
+            SmallTitle(text = "解析测试")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MochiChip("微信支付示例", simChannel == PaymentChannel.WECHAT, MochiColors.WeChatGreen) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        MochiChip("微信支付", simChannel == PaymentChannel.WECHAT, MochiColors.WeChatGreen) {
                             simChannel = PaymentChannel.WECHAT
                             simTitle = "微信支付"
-                            simContent = "向瑞幸咖啡付款19.90元，已从零钱扣除"
+                            simContent = "商户：瑞幸咖啡 商品：生椰拿铁大杯 付款方式：零钱 支付成功 ￥19.90"
                         }
-                        MochiChip("支付宝示例", simChannel == PaymentChannel.ALIPAY, MochiColors.AlipayBlue) {
+                        MochiChip("支付宝", simChannel == PaymentChannel.ALIPAY, MochiColors.AlipayBlue) {
                             simChannel = PaymentChannel.ALIPAY
                             simTitle = "支付宝交易提醒"
                             simContent = "你已通过花呗向美团外卖付款38.50元"
                         }
-                        MochiChip("收款示例", false, MochiColors.Income) {
+                        MochiChip("微信收款", false, MochiColors.Income) {
                             simChannel = PaymentChannel.WECHAT
                             simTitle = "微信支付"
                             simContent = "微信支付收款50.00元"
@@ -407,7 +334,7 @@ fun AutoTrackScreen(
                     TextField(
                         value = simContent,
                         onValueChange = { simContent = it },
-                        label = "通知正文 / Hook 载荷",
+                        label = "支付内容",
                         modifier = Modifier.fillMaxWidth(),
                     )
 
@@ -416,24 +343,22 @@ fun AutoTrackScreen(
                             text = "测试解析",
                             onClick = {
                                 previewResult = onParsePreview(simChannel.packageName, simTitle, simContent)
-                                if (previewResult == null) {
-                                    onShowMessage("未能从该文本中提取到有效支付信息")
-                                }
+                                if (previewResult == null) onShowMessage("未提取到有效支付信息")
                             },
                             modifier = Modifier.weight(1f),
                         )
                         TextButton(
-                            text = "解析并立即自动记账",
+                            text = "测试入账",
                             onClick = {
                                 val parsed = onParsePreview(simChannel.packageName, simTitle, simContent)
                                 previewResult = parsed
                                 if (parsed == null) {
-                                    onShowMessage("未识别到支付金额或渠道")
+                                    onShowMessage("未识别到支付金额")
                                 } else {
                                     val saved = onRecordParsed(parsed)
                                     onShowMessage(
-                                        if (saved) "自动记账成功：${parsed.merchant} ${formatCents(parsed.amountCents)}"
-                                        else "已触发防重复拦截（${settings.dedupeWindowSeconds}秒内相同金额）"
+                                        if (saved) "已记账：${parsed.merchant} ${formatCents(parsed.amountCents)}"
+                                        else "防重复拦截（${settings.dedupeWindowSeconds}秒内相同金额）",
                                     )
                                 }
                             },
@@ -452,13 +377,9 @@ fun AutoTrackScreen(
                                 .padding(12.dp),
                         ) {
                             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                Text("解析结果预览", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                                Text("收款人：${p.merchant} · ${formatCents(p.amountCents)}", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                                 Text(
-                                    "渠道：${p.channel.label}  |  类型：${p.type.name}  |  金额：${formatCents(p.amountCents)}",
-                                    fontSize = 12.sp,
-                                )
-                                Text(
-                                    "商户：${p.merchant}  |  推荐分类：$catName  |  推荐账户：${p.suggestedAccountName}",
+                                    "分类：$catName · 钱包：${p.suggestedAccountName} · 备注：${p.note}",
                                     fontSize = 12.sp,
                                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                 )
@@ -469,128 +390,89 @@ fun AutoTrackScreen(
             }
         }
 
-        // Auto Classification Rules
+        // Auto Classification Rules (full-width inputs + horizontally scrollable category bar — zero awkward wrapping!)
         item(key = "rules") {
-            SmallTitle(text = "智能分类规则（关键词用 | 分隔）")
+            SmallTitle(text = "智能分类规则")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextField(
-                            value = newRuleName,
-                            onValueChange = { newRuleName = it },
-                            label = "规则名（如 咖啡奶茶）",
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextField(
-                            value = newRuleKeyword,
-                            onValueChange = { newRuleKeyword = it },
-                            label = "关键词（如 瑞幸|星巴克）",
-                            modifier = Modifier.weight(1.4f),
-                        )
-                    }
-                    Row(
+                    TextField(
+                        value = newRuleName,
+                        onValueChange = { newRuleName = it },
+                        label = "规则名称（如 咖啡奶茶）",
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            state.activeCategories.take(4).forEach { cat ->
-                                MochiChip(cat.name, newRuleCategoryId == cat.id, Color(cat.colorHex)) {
-                                    newRuleCategoryId = cat.id
-                                }
-                            }
-                        }
-                        TextButton(
-                            text = "添加规则",
-                            onClick = {
-                                if (newRuleName.isBlank() || newRuleKeyword.isBlank()) return@TextButton
-                                onSaveRule(
-                                    AutoTrackRule(
-                                        id = "",
-                                        name = newRuleName.trim(),
-                                        keyword = newRuleKeyword.trim(),
-                                        targetCategoryId = newRuleCategoryId,
-                                    ),
-                                )
-                                newRuleName = ""
-                                newRuleKeyword = ""
-                                onShowMessage("已添加自动分类规则")
-                            },
-                            colors = ButtonDefaults.textButtonColorsPrimary(),
-                        )
-                    }
-
-                    HorizontalDivider()
-
-                    state.activeRules.forEachIndexed { idx, rule ->
-                        Row(
-                            modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    "${rule.name} → ${categoryMap[rule.targetCategoryId]?.name ?: rule.targetCategoryId}",
-                                    fontWeight = FontWeight.SemiBold,
-                                    fontSize = 14.sp,
-                                )
-                                Text(
-                                    rule.keyword,
-                                    fontSize = 12.sp,
-                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                )
-                            }
-                            Spacer(Modifier.width(8.dp))
-                            TextButton(
-                                text = "删除",
-                                onClick = {
-                                    onDeleteRule(rule.id)
-                                    onShowMessage("已删除规则：${rule.name}")
-                                },
-                            )
-                        }
-                        if (idx < state.activeRules.lastIndex) {
-                            HorizontalDivider()
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    if (conflictTargetScheme == "NOTIFICATION") {
-        Dialog(onDismissRequest = { conflictTargetScheme = null }) {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Text("自动记账方案提示", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                    Text(
-                        text = "你当前已开启「方案一：Root / LSPosed 深度监听」。为防止重复记账与浪费后台资源，不建议同时开启「免 Root 通知监听」。\n\n是否关闭 LSPosed 方案并切换为免 Root 通知监听？",
-                        fontSize = 13.sp,
-                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     )
-                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        TextButton(
-                            text = "保持 LSPosed",
-                            onClick = { conflictTargetScheme = null },
-                            modifier = Modifier.weight(1f),
-                        )
-                        TextButton(
-                            text = "切换为通知监听",
-                            onClick = {
-                                onUpdateSettings(
-                                    settings.copy(
-                                        useLsposedMode = false,
-                                        fallbackNotificationListener = true,
-                                    ),
+                    TextField(
+                        value = newRuleKeyword,
+                        onValueChange = { newRuleKeyword = it },
+                        label = "关键词，用 | 分隔（如 瑞幸|星巴克）",
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        expenseCategories.forEach { cat ->
+                            MochiChip(cat.name, newRuleCategoryId == cat.id, Color(cat.colorHex)) {
+                                newRuleCategoryId = cat.id
+                            }
+                        }
+                    }
+                    TextButton(
+                        text = "添加规则",
+                        onClick = {
+                            if (newRuleName.isBlank() || newRuleKeyword.isBlank()) return@TextButton
+                            onSaveRule(
+                                AutoTrackRule(
+                                    id = "",
+                                    name = newRuleName.trim(),
+                                    keyword = newRuleKeyword.trim(),
+                                    targetCategoryId = newRuleCategoryId,
+                                ),
+                            )
+                            newRuleName = ""
+                            newRuleKeyword = ""
+                            onShowMessage("已添加分类规则")
+                        },
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+
+                    if (state.activeRules.isNotEmpty()) {
+                        HorizontalDivider()
+                        state.activeRules.forEachIndexed { idx, rule ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "${rule.name} → ${categoryMap[rule.targetCategoryId]?.name ?: rule.targetCategoryId}",
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        rule.keyword,
+                                        fontSize = 12.sp,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                TextButton(
+                                    text = "删除",
+                                    onClick = {
+                                        onDeleteRule(rule.id)
+                                        onShowMessage("已删除：${rule.name}")
+                                    },
                                 )
-                                conflictTargetScheme = null
-                                onShowMessage("已关闭 LSPosed 方案，切换为免 Root 系统通知监听")
-                            },
-                            colors = ButtonDefaults.textButtonColorsPrimary(),
-                            modifier = Modifier.weight(1f),
-                        )
+                            }
+                            if (idx < state.activeRules.lastIndex) {
+                                HorizontalDivider()
+                            }
+                        }
                     }
                 }
             }
@@ -603,34 +485,27 @@ private fun PermissionCheckRow(
     title: String,
     desc: String,
     granted: Boolean,
-    optional: Boolean,
     actionLabel: String?,
     onAction: () -> Unit,
 ) {
-    val badgeColor = when {
-        granted -> MochiColors.Income
-        optional -> MochiColors.WarningAmber
-        else -> MochiColors.Expense
-    }
-    val badgeText = when {
-        granted -> "已就绪"
-        optional -> "可选"
-        else -> "缺少权限"
-    }
+    val badgeColor = if (granted) MochiColors.Income else MochiColors.Expense
+    val badgeText = if (granted) "已就绪" else "未开启"
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(10.dp),
     ) {
-        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
                 MochiGlassBadge(text = badgeText, color = badgeColor)
-                Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
             }
             Text(
                 text = desc,
                 fontSize = 12.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
             )
         }
         if (!granted && actionLabel != null) {
