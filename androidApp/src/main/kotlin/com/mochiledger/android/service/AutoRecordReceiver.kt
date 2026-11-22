@@ -28,6 +28,8 @@ class AutoRecordReceiver : BroadcastReceiver() {
         val repo = MochiApplication.instance.repository
         val settings = repo.state.value.metadata.autoTrack
         if (!settings.enabled) return
+        if (sourceTag != "NOTIFICATION" && !settings.useLsposedMode) return
+        if (sourceTag == "NOTIFICATION" && !settings.fallbackNotificationListener) return
         if (pkg == PaymentChannel.WECHAT.packageName && !settings.hookWeChat) return
         if (pkg == PaymentChannel.ALIPAY.packageName && !settings.hookAlipay) return
 

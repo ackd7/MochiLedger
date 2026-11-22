@@ -124,9 +124,10 @@ data class SelfHostedSyncConfig(
 @Serializable
 data class AutoTrackSettings(
     val enabled: Boolean = true,
+    val useLsposedMode: Boolean = true,
     val hookWeChat: Boolean = true,
     val hookAlipay: Boolean = true,
-    val fallbackNotificationListener: Boolean = true,
+    val fallbackNotificationListener: Boolean = false,
     val autoConfirm: Boolean = true,
     val dedupeWindowSeconds: Int = 15,
     val floatingConfirmEnabled: Boolean = true,
@@ -243,7 +244,7 @@ data class ChangelogEntry(
 )
 
 object AppInfo {
-    const val VERSION_NAME = "1.2.1"
+    const val VERSION_NAME = "1.3.0"
     const val GITHUB_OWNER = "ackd7"
     const val GITHUB_REPO = "MochiLedger"
     const val GITHUB_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO"
@@ -251,6 +252,17 @@ object AppInfo {
     const val RELEASES_LATEST_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
 
     val CHANGELOG: List<ChangelogEntry> = listOf(
+        ChangelogEntry(
+            version = "v1.3.0",
+            title = "全端交互与界面精雕 · 今日记账 · 精细日期与分类统计 · 专属资产图标 · 扁平化备份中心",
+            changes = listOf(
+                "自动记账明确区分「方案一：Root / LSPosed」与「方案二：免 Root 通知监听」，开启 LSPosed 自动关闭通知监听，切换冲突时弹出提示",
+                "备份与同步页彻底扁平化：去除冗长二级页，直接展示 WebDAV 与自建服务器运行状态卡片、导入导出与自动备份设置，底部新增「备份与同步使用教程」入口",
+                "资产页为微信、支付宝、银行卡、信用卡、现金、理财配备专属品牌矢量图标与配色，移除顶部预览添加按钮，改为统一右下角悬浮「+」按钮",
+                "统计页升级「按日 / 按月 / 按年」精细日期选择器，支持收支/全部切换并支持点击任意分类（餐饮、购物等）筛选查看对应账单明细",
+                "账单主页默认聚焦「今日记账」（可一键切本月），每笔账单精简掉技术来源标签，干净展示时间、付款钱包与金额",
+            ),
+        ),
         ChangelogEntry(
             version = "v1.2.0",
             title = "LSPosed 商品明细抓取 · 付款后轻量悬浮确认条 · 微信/支付宝账单补全 · 权限体检",

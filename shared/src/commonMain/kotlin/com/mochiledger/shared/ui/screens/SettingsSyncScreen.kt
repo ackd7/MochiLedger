@@ -16,8 +16,10 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
@@ -44,7 +46,6 @@ import com.mochiledger.shared.ui.components.FlatIcon
 import com.mochiledger.shared.ui.components.MochiChip
 import com.mochiledger.shared.ui.components.MochiGlassBadge
 import com.mochiledger.shared.ui.theme.MochiColors
-import com.mochiledger.shared.ui.theme.mochiHeroBrush
 import com.mochiledger.shared.ui.theme.mochiShape
 import kotlinx.datetime.Instant
 import kotlinx.datetime.TimeZone
@@ -64,7 +65,7 @@ private enum class SyncSubPage(val title: String) {
     HUB("同步与备份"),
     WEBDAV("WebDAV 云同步"),
     SELF_HOSTED("自建同步服务器"),
-    LOCAL("备份与恢复"),
+    TUTORIAL("备份教程"),
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -116,10 +117,11 @@ fun SettingsSyncScreen(
             "${dt.hour.toString().padStart(2, '0')}:${dt.minute.toString().padStart(2, '0')}"
     }
 
-    val enabledCount = listOf(webDav.enabled, selfHosted.enabled).count { it }
+    val webDavReady = webDav.enabled && webDav.serverUrl.isNotBlank() && webDav.username.isNotBlank()
+    val selfHostedReady = selfHosted.enabled && selfHosted.serverUrl.isNotBlank()
 
     Column(modifier = Modifier.fillMaxSize()) {
-        // Single unified icon-only back header (no text, no stacked double back bars)
+        // Unified icon-only back header
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -162,108 +164,280 @@ fun SettingsSyncScreen(
             ) {
                 when (page) {
                     SyncSubPage.HUB -> {
-                        item(key = "sync_hero") {
-                            Box(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(mochiShape(24.dp))
-                                    .background(mochiHeroBrush())
-                                    .padding(20.dp),
-                            ) {
-                                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Row(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        horizontalArrangement = Arrangement.SpaceBetween,
-                                        verticalAlignment = Alignment.CenterVertically,
-                                    ) {
-                                        Text("多端同步与备份中心", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                                        Box(
-                                            modifier = Modifier
-                                                .clip(mochiShape(10.dp))
-                                                .background(Color.White.copy(alpha = 0.2f))
-                                                .padding(horizontal = 10.dp, vertical = 4.dp),
-                                        ) {
-                                            Text("已启用 $enabledCount 路云同步", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-                                        }
-                                    }
-                                    Text(
-                                        "支持同时开启 WebDAV 与自建服务器进行联合备份与读取；多源合并账单与资产时自动去重，重复记录仅保留一份。",
-                                        color = Color.White.copy(alpha = 0.86f),
-                                        fontSize = 12.sp,
+                        // 1. Live Cloud Sync Status Overview Card (WebDAV + Self-Hosted)
+                        item(key = "sync_status_card") {
+                            SmallTitle(text = "云同步状态")
+                            Card(modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    SyncServiceStatusRow(
+                                        title = "WebDAV 云同步",
+                                        subtitle = when {
+                                            webDavReady && webDav.lastSyncAt > 0L -> "上次同步：${formatTimestamp(webDav.lastSyncAt)}"
+                                            webDavReady -> "已配置，点击立即同步验证"
+                                            webDav.enabled -> "已开启但信息不完整，点击补全"
+                                            else -> "未启用 · 点击配置坚果云 / Nextcloud / Alist"
+                                        },
+                                        statusText = when {
+                                            webDavReady && webDav.lastSyncAt > 0L -> "运行正常"
+                                            webDavReady -> "待同步"
+                                            webDav.enabled -> "待配置"
+                                            else -> "未启用"
+                                        },
+                                        statusColor = when {
+                                            webDavReady && webDav.lastSyncAt > 0L -> MochiColors.Income
+                                            webDav.enabled -> MochiColors.WarningAmber
+                                            else -> MiuixTheme.colorScheme.onSurfaceVariantSummary
+                                        },
+                                        onClick = { subPage = SyncSubPage.WEBDAV },
                                     )
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clip(mochiShape(14.dp))
-                                            .background(Color.White.copy(alpha = 0.22f))
-                                            .clickable(enabled = !state.isSyncing) { onSyncAllEnabled() }
-                                            .padding(vertical = 11.dp),
-                                        contentAlignment = Alignment.Center,
-                                    ) {
-                                        Text(
-                                            text = if (state.isSyncing) "多源同步中..." else "一键多源同步 / 读取合并",
-                                            color = Color.White,
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.SemiBold,
+                                    HorizontalDivider()
+                                    SyncServiceStatusRow(
+                                        title = "自建同步服务器",
+                                        subtitle = when {
+                                            selfHostedReady && selfHosted.lastSyncAt > 0L -> "${selfHosted.serverUrl} · 上次：${formatTimestamp(selfHosted.lastSyncAt)}"
+                                            selfHostedReady -> "${selfHosted.serverUrl} · 点击立即同步验证"
+                                            selfHosted.enabled -> "已开启但未填写地址"
+                                            else -> "未启用 · 点击配置路由器 / NAS / Cloudflare 同步服"
+                                        },
+                                        statusText = when {
+                                            selfHostedReady && selfHosted.lastSyncAt > 0L -> "运行正常"
+                                            selfHostedReady -> "待同步"
+                                            selfHosted.enabled -> "待配置"
+                                            else -> "未启用"
+                                        },
+                                        statusColor = when {
+                                            selfHostedReady && selfHosted.lastSyncAt > 0L -> MochiColors.Income
+                                            selfHosted.enabled -> MochiColors.WarningAmber
+                                            else -> MiuixTheme.colorScheme.onSurfaceVariantSummary
+                                        },
+                                        onClick = { subPage = SyncSubPage.SELF_HOSTED },
+                                    )
+                                    TextButton(
+                                        text = if (state.isSyncing) "多源同步中..." else "一键同步已启用服务器",
+                                        onClick = onSyncAllEnabled,
+                                        enabled = !state.isSyncing,
+                                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                }
+                            }
+                        }
+
+                        // 2. Manual Backup & Import/Export (Directly in Hub, no extra subpage)
+                        item(key = "manual_backup_card") {
+                            SmallTitle(text = "备份与导入")
+                            Card(modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    TextButton(
+                                        text = "立即手动备份",
+                                        onClick = onManualBackupNow,
+                                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                                        TextButton(
+                                            text = "导出备份文件",
+                                            onClick = onExportBackupWithPicker,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        TextButton(
+                                            text = "导入备份文件",
+                                            onClick = { onPickImportBackupFile(restoreServerConfigOnImport) },
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+                                    TextButton(
+                                        text = "导出 CSV 账单表格",
+                                        onClick = onExportCsv,
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                    HorizontalDivider()
+                                    SwitchPreference(
+                                        title = "导入时恢复服务器配置",
+                                        summary = "自动还原备份内保存的 WebDAV、自建服与自动备份设置",
+                                        checked = restoreServerConfigOnImport,
+                                        onCheckedChange = { restoreServerConfigOnImport = it },
+                                    )
+                                    TextField(
+                                        value = importJsonText,
+                                        onValueChange = { importJsonText = it },
+                                        label = "或粘贴 .mochi.json 文本导入...",
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                    if (importJsonText.isNotBlank()) {
+                                        TextButton(
+                                            text = "从粘贴文本导入",
+                                            onClick = {
+                                                onImportJson(importJsonText, restoreServerConfigOnImport)
+                                                importJsonText = ""
+                                            },
+                                            colors = ButtonDefaults.textButtonColorsPrimary(),
+                                            modifier = Modifier.fillMaxWidth(),
                                         )
                                     }
                                 }
                             }
                         }
 
-                        item(key = "entries") {
-                            SmallTitle(text = "备份与同步方式（点击进入配置）")
+                        // 3. Auto Backup Policy
+                        item(key = "auto_backup_card") {
+                            SmallTitle(text = "自动备份")
                             Card(modifier = Modifier.fillMaxWidth()) {
-                                Column {
-                                    ArrowPreference(
-                                        title = "WebDAV 云同步",
-                                        summary = if (webDav.enabled) {
-                                            "已启用 · 上次同步：${formatTimestamp(webDav.lastSyncAt)}"
-                                        } else {
-                                            "未启用 · 支持坚果云、Nextcloud、Alist 等"
-                                        },
-                                        onClick = { subPage = SyncSubPage.WEBDAV },
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    SwitchPreference(
+                                        title = "每天首次打开自动备份",
+                                        summary = "每天首次启动软件时自动保存一份完整本地备份",
+                                        checked = autoBackup.dailyFirstOpenEnabled,
+                                        onCheckedChange = { onUpdateAutoBackup(autoBackup.copy(dailyFirstOpenEnabled = it)) },
                                     )
-                                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                                    ArrowPreference(
-                                        title = "自建同步服务器",
-                                        summary = if (selfHosted.enabled) {
-                                            "已启用 · ${selfHosted.serverUrl}"
-                                        } else {
-                                            "未启用 · 连接独立部署的同步服务端"
-                                        },
-                                        onClick = { subPage = SyncSubPage.SELF_HOSTED },
+                                    HorizontalDivider()
+                                    SwitchPreference(
+                                        title = "定时自动备份",
+                                        summary = "按设定周期自动保存备份并轮转清理旧份",
+                                        checked = autoBackup.scheduledEnabled,
+                                        onCheckedChange = { onUpdateAutoBackup(autoBackup.copy(scheduledEnabled = it)) },
                                     )
-                                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                                    val backupSummary = buildList {
-                                        if (autoBackup.dailyFirstOpenEnabled) add("每日首开备份")
-                                        if (autoBackup.scheduledEnabled) add("每${autoBackup.intervalHours}h定时")
-                                    }.let { tags ->
-                                        val prefix = if (tags.isEmpty()) "手动备份" else tags.joinToString(" · ")
-                                        "$prefix · 已有 ${state.localBackups.size} 份本地备份（含服务器配置）"
+                                    if (autoBackup.scheduledEnabled) {
+                                        FlowRow(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            listOf(1, 3, 6, 12, 24).forEach { hours ->
+                                                MochiChip(
+                                                    label = if (hours == 24) "每天" else "每 ${hours}h",
+                                                    selected = autoBackup.intervalHours == hours,
+                                                ) {
+                                                    onUpdateAutoBackup(autoBackup.copy(intervalHours = hours))
+                                                }
+                                            }
+                                        }
                                     }
-                                    ArrowPreference(
-                                        title = "定时备份、手动备份与导入恢复",
-                                        summary = backupSummary,
-                                        onClick = { subPage = SyncSubPage.LOCAL },
+                                    HorizontalDivider()
+                                    SwitchPreference(
+                                        title = "备份包含服务器信息",
+                                        summary = "同时保存 WebDAV 与自建同步服务器配置，换机一键还原",
+                                        checked = autoBackup.includeServerConfig,
+                                        onCheckedChange = { onUpdateAutoBackup(autoBackup.copy(includeServerConfig = it)) },
+                                    )
+                                    HorizontalDivider()
+                                    SwitchPreference(
+                                        title = "自动备份时同步云端",
+                                        summary = "触发自动备份后同时同步至已启用的云同步服务器",
+                                        checked = autoBackup.alsoSyncRemote,
+                                        onCheckedChange = { onUpdateAutoBackup(autoBackup.copy(alsoSyncRemote = it)) },
+                                    )
+                                    Text(
+                                        text = "上次自动备份：${if (autoBackup.lastAutoBackupAt > 0L) formatTimestamp(autoBackup.lastAutoBackupAt) else "尚未执行"}",
+                                        fontSize = 12.sp,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                     )
                                 }
                             }
                         }
 
-                        item(key = "dedupe_note") {
+                        // 4. WeChat / Alipay Official Statement CSV Enrichment
+                        item(key = "statement_csv_card") {
+                            SmallTitle(text = "官方账单补全")
                             Card(modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                        MochiGlassBadge("多源去重保护", MochiColors.Income)
-                                        Text("自动冲突合并与去重", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                                    }
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     Text(
-                                        "当同时从 WebDAV、自建服务器或本地 JSON 读取数据时，系统会按记录 UUID 以及（类型、金额、时间、商户、账户名）双重指纹自动去重，多余重复项自动舍弃。",
+                                        text = "导入微信或支付宝官方导出的 CSV 账单，自动按时间与金额匹配已有账单补全商户和商品明细（不重复记账）。",
                                         fontSize = 12.sp,
                                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                     )
+                                    SwitchPreference(
+                                        title = "同时导入漏记账单",
+                                        summary = "关闭则仅补全已有账单的商品说明",
+                                        checked = importMissingFromCsv,
+                                        onCheckedChange = { importMissingFromCsv = it },
+                                    )
+                                    TextButton(
+                                        text = "选择微信 / 支付宝账单 (.csv)",
+                                        onClick = { onPickImportStatementCsv(importMissingFromCsv) },
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
                                 }
+                            }
+                        }
+
+                        // 5. Local Backup History
+                        item(key = "local_history_card") {
+                            SmallTitle(text = "本地备份历史（${state.localBackups.size} 份）")
+                            Card(modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Text(
+                                        text = "备份目录：${state.backupDirectoryPath}",
+                                        fontSize = 11.sp,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    )
+                                    if (state.localBackups.isEmpty()) {
+                                        Text(
+                                            text = "暂无本地备份，点击上方「立即手动备份」即可创建。",
+                                            fontSize = 13.sp,
+                                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                        )
+                                    } else {
+                                        state.localBackups.forEachIndexed { idx, file ->
+                                            if (idx > 0) HorizontalDivider()
+                                            val triggerLabel = when (file.triggerType) {
+                                                "daily" -> "每日首开"
+                                                "scheduled" -> "定时"
+                                                else -> "手动"
+                                            }
+                                            val triggerColor = when (file.triggerType) {
+                                                "daily" -> MochiColors.Income
+                                                "scheduled" -> MiuixTheme.colorScheme.primary
+                                                else -> Color(0xFFE88B00)
+                                            }
+                                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                    ) {
+                                                        MochiGlassBadge(triggerLabel, triggerColor)
+                                                        Text(formatFileSize(file.sizeBytes), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                                    }
+                                                    Text(
+                                                        text = formatTimestamp(file.lastModifiedMs),
+                                                        fontSize = 11.sp,
+                                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                                    )
+                                                }
+                                                Text(file.fileName, fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurface)
+                                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                                                    TextButton(
+                                                        text = "导入恢复",
+                                                        onClick = { onRestoreLocalBackup(file.absolutePath, restoreServerConfigOnImport) },
+                                                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                                                        modifier = Modifier.weight(1f),
+                                                    )
+                                                    TextButton(
+                                                        text = "删除",
+                                                        onClick = { onDeleteLocalBackup(file.absolutePath) },
+                                                        modifier = Modifier.weight(0.6f),
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // 6. Bottom Tutorial Entry Card
+                        item(key = "backup_tutorial_entry") {
+                            SmallTitle(text = "帮助")
+                            Card(modifier = Modifier.fillMaxWidth()) {
+                                ArrowPreference(
+                                    title = "备份与同步使用教程",
+                                    summary = "查看本地备份恢复、WebDAV、自建服务器及账单导入步骤",
+                                    onClick = { subPage = SyncSubPage.TUTORIAL },
+                                )
                             }
                         }
                     }
@@ -350,14 +524,14 @@ fun SettingsSyncScreen(
                                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     SwitchPreference(
                                         title = "加入一键多源同步",
-                                        summary = "连接独立部署的自建同步服务端（NAS / VPS / Docker）",
+                                        summary = "连接独立部署的自建同步服务端（路由器 / NAS / Cloudflare）",
                                         checked = selfHosted.enabled,
                                         onCheckedChange = { onUpdateSelfHosted(selfHosted.copy(enabled = it)) },
                                     )
                                     TextField(
                                         value = selfHosted.serverUrl,
                                         onValueChange = { onUpdateSelfHosted(selfHosted.copy(serverUrl = it)) },
-                                        label = "服务器地址（如 http://192.168.1.10:8787）",
+                                        label = "服务器地址（如 https://sync.example.com）",
                                         modifier = Modifier.fillMaxWidth(),
                                     )
                                     TextField(
@@ -397,232 +571,98 @@ fun SettingsSyncScreen(
                         }
                     }
 
-                    SyncSubPage.LOCAL -> {
-                        item(key = "auto_backup_card") {
-                            SmallTitle(text = "自动备份策略")
-                            Card(modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    SwitchPreference(
-                                        title = "每天首次打开软件自动备份",
-                                        summary = "每天第一次启动墨记时，自动保存全量本地备份",
-                                        checked = autoBackup.dailyFirstOpenEnabled,
-                                        onCheckedChange = { onUpdateAutoBackup(autoBackup.copy(dailyFirstOpenEnabled = it)) },
-                                    )
-                                    HorizontalDivider()
-                                    SwitchPreference(
-                                        title = "定时自动备份",
-                                        summary = "软件运行期间按设定周期自动备份，防止数据丢失",
-                                        checked = autoBackup.scheduledEnabled,
-                                        onCheckedChange = { onUpdateAutoBackup(autoBackup.copy(scheduledEnabled = it)) },
-                                    )
-                                    if (autoBackup.scheduledEnabled) {
-                                        Text(
-                                            text = "定时备份间隔",
-                                            fontSize = 13.sp,
-                                            fontWeight = FontWeight.SemiBold,
-                                        )
-                                        FlowRow(
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                            verticalArrangement = Arrangement.spacedBy(8.dp),
-                                        ) {
-                                            listOf(1, 3, 6, 12, 24).forEach { hours ->
-                                                MochiChip(
-                                                    label = if (hours == 24) "每天" else "每 $hours 小时",
-                                                    selected = autoBackup.intervalHours == hours,
-                                                ) {
-                                                    onUpdateAutoBackup(autoBackup.copy(intervalHours = hours))
-                                                }
-                                            }
-                                        }
-                                    }
-                                    HorizontalDivider()
-                                    SwitchPreference(
-                                        title = "备份包含同步服务器信息",
-                                        summary = "同时备份 WebDAV、自建服地址与 Token、自动记账与备份配置",
-                                        checked = autoBackup.includeServerConfig,
-                                        onCheckedChange = { onUpdateAutoBackup(autoBackup.copy(includeServerConfig = it)) },
-                                    )
-                                    HorizontalDivider()
-                                    SwitchPreference(
-                                        title = "自动备份时联动云端同步",
-                                        summary = "触发自动备份后同时同步至已开启的 WebDAV / 自建服务器",
-                                        checked = autoBackup.alsoSyncRemote,
-                                        onCheckedChange = { onUpdateAutoBackup(autoBackup.copy(alsoSyncRemote = it)) },
-                                    )
-                                    Text(
-                                        text = "上次自动备份：${if (autoBackup.lastAutoBackupAt > 0L) formatTimestamp(autoBackup.lastAutoBackupAt) else "尚未执行"}" +
-                                            if (autoBackup.lastDailyBackupDate.isNotBlank()) " · 今日首开：${autoBackup.lastDailyBackupDate}" else "",
-                                        fontSize = 12.sp,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                    )
-                                }
-                            }
+                    SyncSubPage.TUTORIAL -> {
+                        item(key = "tutorial_content") {
+                            TutorialStepCard(
+                                step = "1",
+                                title = "本地手动与自动备份",
+                                body = "• 点击「立即手动备份」会立即在本地备份目录生成 .mochi.json 文件。\n" +
+                                    "• 开启「每天首次打开自动备份」或「定时自动备份」后，软件会自动在后台留存历史份并自动清理超过 30 份的旧文件。\n" +
+                                    "• 开启「备份包含服务器信息」后，导出的备份文件不仅含全部账单与资产，还包含 WebDAV 和自建服务器地址与密码，换机导入可一键还原。",
+                            )
                         }
-
-                        item(key = "manual_backup_card") {
-                            SmallTitle(text = "手动备份与导入")
-                            Card(modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    TextButton(
-                                        text = "立即手动备份（含账单与服务器配置）",
-                                        onClick = onManualBackupNow,
-                                        colors = ButtonDefaults.textButtonColorsPrimary(),
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                                        TextButton(
-                                            text = "另存为 .mochi.json",
-                                            onClick = onExportBackupWithPicker,
-                                            modifier = Modifier.weight(1f),
-                                        )
-                                        TextButton(
-                                            text = "选择文件导入备份",
-                                            onClick = { onPickImportBackupFile(restoreServerConfigOnImport) },
-                                            modifier = Modifier.weight(1f),
-                                        )
-                                    }
-                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                                        TextButton(
-                                            text = "导出 CSV 账单表格",
-                                            onClick = onExportCsv,
-                                            modifier = Modifier.fillMaxWidth(),
-                                        )
-                                    }
-                                    HorizontalDivider()
-                                    SwitchPreference(
-                                        title = "导入时一并恢复服务器配置",
-                                        summary = "恢复备份文件内记录的 WebDAV、自建服及自动备份设置",
-                                        checked = restoreServerConfigOnImport,
-                                        onCheckedChange = { restoreServerConfigOnImport = it },
-                                    )
-                                    TextField(
-                                        value = importJsonText,
-                                        onValueChange = { importJsonText = it },
-                                        label = "或粘贴 .mochi.json 文本内容导入...",
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                    if (importJsonText.isNotBlank()) {
-                                        TextButton(
-                                            text = "从粘贴文本去重合并导入",
-                                            onClick = {
-                                                onImportJson(importJsonText, restoreServerConfigOnImport)
-                                                importJsonText = ""
-                                            },
-                                            colors = ButtonDefaults.textButtonColorsPrimary(),
-                                            modifier = Modifier.fillMaxWidth(),
-                                        )
-                                    }
-                                }
-                            }
+                        item(key = "tutorial_restore") {
+                            TutorialStepCard(
+                                step = "2",
+                                title = "如何导入与换机恢复",
+                                body = "• 换新手机或重装电脑后，点击「导入备份文件」，选中之前导出的 .mochi.json 即可。\n" +
+                                    "• 导入采用智能去重合并机制：相同账单与账户不会重复叠加，并自动还原你的同步服务器配置。",
+                            )
                         }
-
-                        item(key = "statement_csv_card") {
-                            SmallTitle(text = "微信 / 支付宝官方账单导入与商品明细补全")
-                            Card(modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Text(
-                                        text = "支持直接导入微信支付 / 支付宝官方导出的 CSV 账单（自动识别 UTF-8 / GBK 编码）。按「金额 + 时间」自动匹配已有账单补全商户全称与商品说明，不会产生重复记账。",
-                                        fontSize = 12.sp,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                    )
-                                    SwitchPreference(
-                                        title = "同时导入漏记账单",
-                                        summary = "开启后：已有账单自动补全商品明细，漏记账单自动导入；关闭则仅补全已有账单",
-                                        checked = importMissingFromCsv,
-                                        onCheckedChange = { importMissingFromCsv = it },
-                                    )
-                                    TextButton(
-                                        text = "选择微信 / 支付宝官方账单 (.csv)",
-                                        onClick = { onPickImportStatementCsv(importMissingFromCsv) },
-                                        colors = ButtonDefaults.textButtonColorsPrimary(),
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
-                                }
-                            }
+                        item(key = "tutorial_cloud") {
+                            TutorialStepCard(
+                                step = "3",
+                                title = "WebDAV 与自建服务器多端同步",
+                                body = "• WebDAV（如坚果云）：在坚果云网页端「安全选项 → 添加应用」生成应用专用密码，点击上方「WebDAV 云同步」填入并测试连接即可。\n" +
+                                    "• 自建同步服务器：支持部署在 OpenWrt 路由器、NAS Docker 或 Cloudflare Workers，配合 Cloudflare Tunnel 可实现手机 5G 与电脑全天候 HTTPS 同步。",
+                            )
                         }
-
-                        item(key = "local_history_card") {
-                            SmallTitle(text = "本地备份历史（共 ${state.localBackups.size} 份）")
-                            Card(modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    Text(
-                                        text = "备份目录：${state.backupDirectoryPath}\n数据库：${state.databasePath}",
-                                        fontSize = 11.sp,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                    )
-                                    if (state.localBackups.isEmpty()) {
-                                        Text(
-                                            text = "暂无本地备份文件，点击上方「立即手动备份」即可创建第一份完整备份。",
-                                            fontSize = 13.sp,
-                                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                        )
-                                    } else {
-                                        state.localBackups.forEachIndexed { idx, file ->
-                                            if (idx > 0) HorizontalDivider()
-                                            val triggerLabel = when (file.triggerType) {
-                                                "daily" -> "每日首开"
-                                                "scheduled" -> "定时备份"
-                                                else -> "手动备份"
-                                            }
-                                            val triggerColor = when (file.triggerType) {
-                                                "daily" -> MochiColors.Income
-                                                "scheduled" -> MiuixTheme.colorScheme.primary
-                                                else -> Color(0xFFE88B00)
-                                            }
-                                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                                                Row(
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                    horizontalArrangement = Arrangement.SpaceBetween,
-                                                    verticalAlignment = Alignment.CenterVertically,
-                                                ) {
-                                                    Row(
-                                                        verticalAlignment = Alignment.CenterVertically,
-                                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                                        modifier = Modifier.weight(1f),
-                                                    ) {
-                                                        MochiGlassBadge(triggerLabel, triggerColor)
-                                                        Text(
-                                                            text = formatFileSize(file.sizeBytes),
-                                                            fontSize = 12.sp,
-                                                            fontWeight = FontWeight.SemiBold,
-                                                        )
-                                                    }
-                                                    Text(
-                                                        text = formatTimestamp(file.lastModifiedMs),
-                                                        fontSize = 11.sp,
-                                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                                    )
-                                                }
-                                                Text(
-                                                    text = file.fileName,
-                                                    fontSize = 12.sp,
-                                                    color = MiuixTheme.colorScheme.onSurface,
-                                                )
-                                                Row(
-                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                                    modifier = Modifier.fillMaxWidth(),
-                                                ) {
-                                                    TextButton(
-                                                        text = "导入恢复",
-                                                        onClick = { onRestoreLocalBackup(file.absolutePath, restoreServerConfigOnImport) },
-                                                        colors = ButtonDefaults.textButtonColorsPrimary(),
-                                                        modifier = Modifier.weight(1f),
-                                                    )
-                                                    TextButton(
-                                                        text = "删除",
-                                                        onClick = { onDeleteLocalBackup(file.absolutePath) },
-                                                        modifier = Modifier.weight(0.6f),
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
+                        item(key = "tutorial_csv") {
+                            TutorialStepCard(
+                                step = "4",
+                                title = "微信 / 支付宝官方账单补全商品明细",
+                                body = "• 微信：我 → 服务 → 钱包 → 账单 → 常见问题 → 下载账单（用于个人对账）导出 CSV。\n" +
+                                    "• 支付宝：我的 → 账单 → 右上角「…」→ 开具交易流水证明（用于个人对账）导出 CSV。\n" +
+                                    "• 在「官方账单补全」选择该 CSV，墨记会自动按时间与金额匹配已有账单并补全商品说明。",
+                            )
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun SyncServiceStatusRow(
+    title: String,
+    subtitle: String,
+    statusText: String,
+    statusColor: Color,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(mochiShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                MochiGlassBadge(statusText, statusColor)
+            }
+            Text(
+                text = subtitle,
+                fontSize = 12.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+        Text("配置 ›", fontSize = 13.sp, color = MiuixTheme.colorScheme.primary, fontWeight = FontWeight.Medium)
+    }
+}
+
+@Composable
+private fun TutorialStepCard(
+    step: String,
+    title: String,
+    body: String,
+) {
+    Card(modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                MochiGlassBadge("步骤 $step", MiuixTheme.colorScheme.primary)
+                Text(title, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            }
+            Text(
+                text = body,
+                fontSize = 13.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                lineHeight = 20.sp,
+            )
         }
     }
 }

@@ -70,6 +70,7 @@ fun TransactionsScreen(
     val nowDt = remember {
         Instant.fromEpochMilliseconds(PlatformBridge.currentTimeMillis()).toLocalDateTime(TimeZone.currentSystemDefault())
     }
+    var todayOnly by remember { mutableStateOf(true) }
     var selectedYear by remember { mutableStateOf(nowDt.year) }
     var selectedMonth by remember { mutableStateOf(nowDt.monthNumber) }
     var searchQuery by remember { mutableStateOf("") }
@@ -77,24 +78,38 @@ fun TransactionsScreen(
     var editingTx by remember { mutableStateOf<LedgerTransaction?>(null) }
     var showAddDialog by remember { mutableStateOf(false) }
 
-    val summary = remember(state.transactions, selectedYear, selectedMonth) {
-        state.monthlySummary(selectedYear, selectedMonth)
-    }
     val accountMap = remember(state.accounts) { state.accounts.associateBy { it.id } }
     val categoryMap = remember(state.categories) { state.categories.associateBy { it.id } }
 
-    val filteredTxs = remember(state.transactions, selectedYear, selectedMonth, searchQuery, filterType) {
+    val periodTxs = remember(state.transactions, todayOnly, selectedYear, selectedMonth) {
         val tz = TimeZone.currentSystemDefault()
         state.activeTransactions.filter { tx ->
             val dt = Instant.fromEpochMilliseconds(tx.timestamp).toLocalDateTime(tz)
-            val matchMonth = dt.year == selectedYear && dt.monthNumber == selectedMonth
+            if (todayOnly) {
+                dt.year == nowDt.year && dt.monthNumber == nowDt.monthNumber && dt.dayOfMonth == nowDt.dayOfMonth
+            } else {
+                dt.year == selectedYear && dt.monthNumber == selectedMonth
+            }
+        }
+    }
+    val heroExpenseCents = remember(periodTxs) {
+        periodTxs.filter { it.type == TransactionType.EXPENSE }.sumOf { it.amountCents }
+    }
+    val heroIncomeCents = remember(periodTxs) {
+        periodTxs.filter { it.type == TransactionType.INCOME }.sumOf { it.amountCents }
+    }
+    val heroNetCents = heroIncomeCents - heroExpenseCents
+
+    val filteredTxs = remember(periodTxs, searchQuery, filterType) {
+        periodTxs.filter { tx ->
             val matchType = filterType == null || tx.type == filterType
             val q = searchQuery.trim()
             val matchQuery = q.isEmpty() ||
                 tx.merchant.contains(q, ignoreCase = true) ||
                 tx.note.contains(q, ignoreCase = true) ||
-                (categoryMap[tx.categoryId]?.name?.contains(q, ignoreCase = true) == true)
-            matchMonth && matchType && matchQuery
+                (categoryMap[tx.categoryId]?.name?.contains(q, ignoreCase = true) == true) ||
+                (accountMap[tx.accountId]?.name?.contains(q, ignoreCase = true) == true)
+            matchType && matchQuery
         }
     }
 
@@ -128,55 +143,79 @@ fun TransactionsScreen(
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
-                                text = "${selectedYear}年${selectedMonth}月 账单概览",
-                                color = Color.White.copy(alpha = 0.88f),
+                                text = if (todayOnly) {
+                                    "今日记账 · ${nowDt.monthNumber}月${nowDt.dayOfMonth}日"
+                                } else {
+                                    "${selectedYear}年${selectedMonth}月 账单"
+                                },
+                                color = Color.White.copy(alpha = 0.90f),
                                 fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
+                                fontWeight = FontWeight.SemiBold,
                             )
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Box(
                                     modifier = Modifier
                                         .clip(mochiShape(10.dp))
-                                        .background(Color.White.copy(alpha = 0.18f))
-                                        .clickable {
-                                            if (selectedMonth == 1) {
-                                                selectedYear -= 1
-                                                selectedMonth = 12
-                                            } else {
-                                                selectedMonth -= 1
-                                            }
-                                        }
+                                        .background(Color.White.copy(alpha = if (todayOnly) 0.30f else 0.14f))
+                                        .clickable { todayOnly = true }
                                         .padding(horizontal = 10.dp, vertical = 4.dp),
                                 ) {
-                                    Text("上月", color = Color.White, fontSize = 12.sp)
+                                    Text("今日", color = Color.White, fontSize = 12.sp, fontWeight = if (todayOnly) FontWeight.Bold else FontWeight.Normal)
                                 }
                                 Box(
                                     modifier = Modifier
                                         .clip(mochiShape(10.dp))
-                                        .background(Color.White.copy(alpha = 0.18f))
-                                        .clickable {
-                                            if (selectedMonth == 12) {
-                                                selectedYear += 1
-                                                selectedMonth = 1
-                                            } else {
-                                                selectedMonth += 1
-                                            }
-                                        }
+                                        .background(Color.White.copy(alpha = if (!todayOnly) 0.30f else 0.14f))
+                                        .clickable { todayOnly = false }
                                         .padding(horizontal = 10.dp, vertical = 4.dp),
                                 ) {
-                                    Text("下月", color = Color.White, fontSize = 12.sp)
+                                    Text("本月", color = Color.White, fontSize = 12.sp, fontWeight = if (!todayOnly) FontWeight.Bold else FontWeight.Normal)
+                                }
+                                if (!todayOnly) {
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(mochiShape(10.dp))
+                                            .background(Color.White.copy(alpha = 0.16f))
+                                            .clickable {
+                                                if (selectedMonth == 1) {
+                                                    selectedYear -= 1
+                                                    selectedMonth = 12
+                                                } else {
+                                                    selectedMonth -= 1
+                                                }
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    ) {
+                                        Text("◀", color = Color.White, fontSize = 11.sp)
+                                    }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(mochiShape(10.dp))
+                                            .background(Color.White.copy(alpha = 0.16f))
+                                            .clickable {
+                                                if (selectedMonth == 12) {
+                                                    selectedYear += 1
+                                                    selectedMonth = 1
+                                                } else {
+                                                    selectedMonth += 1
+                                                }
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                                    ) {
+                                        Text("▶", color = Color.White, fontSize = 11.sp)
+                                    }
                                 }
                             }
                         }
 
                         Spacer(Modifier.height(14.dp))
                         Text(
-                            text = "本月结余",
+                            text = if (todayOnly) "今日结余" else "本月结余",
                             color = Color.White.copy(alpha = 0.78f),
                             fontSize = 12.sp,
                         )
                         Text(
-                            text = formatCents(summary.netCents, showSign = true),
+                            text = formatCents(heroNetCents, showSign = true),
                             color = Color.White,
                             fontSize = 30.sp,
                             fontWeight = FontWeight.Bold,
@@ -191,18 +230,18 @@ fun TransactionsScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                         ) {
                             Column {
-                                Text("本月支出", color = Color.White.copy(alpha = 0.78f), fontSize = 12.sp)
+                                Text(if (todayOnly) "今日支出" else "本月支出", color = Color.White.copy(alpha = 0.78f), fontSize = 12.sp)
                                 Text(
-                                    text = formatCents(summary.expenseCents),
+                                    text = formatCents(heroExpenseCents),
                                     color = Color.White,
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.SemiBold,
                                 )
                             }
                             Column(horizontalAlignment = Alignment.End) {
-                                Text("本月收入", color = Color.White.copy(alpha = 0.78f), fontSize = 12.sp)
+                                Text(if (todayOnly) "今日收入" else "本月收入", color = Color.White.copy(alpha = 0.78f), fontSize = 12.sp)
                                 Text(
-                                    text = formatCents(summary.incomeCents),
+                                    text = formatCents(heroIncomeCents),
                                     color = Color.White,
                                     fontSize = 16.sp,
                                     fontWeight = FontWeight.SemiBold,
@@ -246,7 +285,7 @@ fun TransactionsScreen(
                         ) {
                             FlatIcon("ledger", MiuixTheme.colorScheme.onSurfaceVariantSummary, size = 34.dp)
                             Spacer(Modifier.height(10.dp))
-                            Text("本月暂无账单记录", fontWeight = FontWeight.SemiBold)
+                            Text(if (todayOnly) "今日暂无记账记录" else "本月暂无账单记录", fontWeight = FontWeight.SemiBold)
                             Spacer(Modifier.height(4.dp))
                             Text(
                                 "点击右下角悬浮「+」按钮开始记账",

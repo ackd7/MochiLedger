@@ -30,6 +30,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import com.mochiledger.shared.data.LedgerUiState
 import com.mochiledger.shared.model.AutoTrackRule
 import com.mochiledger.shared.model.AutoTrackSettings
@@ -85,6 +86,7 @@ fun AutoTrackScreen(
     var newRuleName by remember { mutableStateOf("") }
     var newRuleKeyword by remember { mutableStateOf("") }
     var newRuleCategoryId by remember { mutableStateOf("cat_food") }
+    var conflictTargetScheme by remember { mutableStateOf<String?>(null) } // "NOTIFICATION" or "LSPOSED"
 
     val missingPermissionsCount = if (runtime.supportsLsposed) {
         listOf(
@@ -223,38 +225,21 @@ fun AutoTrackScreen(
             }
         }
 
-        // Hook Switches
-        item(key = "switches") {
-            SmallTitle(text = "监听通道与悬浮确认设置")
+        // Master Switch & Floating Confirm
+        item(key = "master_switches") {
+            SmallTitle(text = "总开关与快捷确认")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     SwitchPreference(
                         title = "启用自动记账",
-                        summary = "接收 LSPosed Hook 与系统通知事件",
+                        summary = "总开关，关闭后暂停所有自动识别通道",
                         checked = settings.enabled,
                         onCheckedChange = { onUpdateSettings(settings.copy(enabled = it)) },
                     )
-                    SwitchPreference(
-                        title = "监听微信支付 (com.tencent.mm)",
-                        summary = "识别微信付款、转账、红包与支付页商品明细",
-                        checked = settings.hookWeChat,
-                        onCheckedChange = { onUpdateSettings(settings.copy(hookWeChat = it)) },
-                    )
-                    SwitchPreference(
-                        title = "监听支付宝 (com.eg.android.AlipayGphone)",
-                        summary = "识别支付宝交易提醒、花呗消费与支付页商品明细",
-                        checked = settings.hookAlipay,
-                        onCheckedChange = { onUpdateSettings(settings.copy(hookAlipay = it)) },
-                    )
-                    SwitchPreference(
-                        title = "系统通知监听降级方案（免 Root）",
-                        summary = "未启用 LSPosed 时通过 NotificationListenerService 兜底",
-                        checked = settings.fallbackNotificationListener,
-                        onCheckedChange = { onUpdateSettings(settings.copy(fallbackNotificationListener = it)) },
-                    )
+                    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     SwitchPreference(
                         title = "付款后弹出轻量悬浮确认条",
-                        summary = "自动记账后顶部弹出小卡片，1 秒点选快捷标签或补充买了什么（免 Root）",
+                        summary = "自动记账后顶部弹出小卡片，1 秒点选标签或补充买了什么（免 Root 可用）",
                         checked = settings.floatingConfirmEnabled,
                         onCheckedChange = { onUpdateSettings(settings.copy(floatingConfirmEnabled = it)) },
                     )
@@ -276,6 +261,93 @@ fun AutoTrackScreen(
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // Scheme 1: Root / LSPosed Deep Hook
+        item(key = "scheme_lsposed") {
+            SmallTitle(text = "方案一：Root / LSPosed 深度监听（与方案二互斥）")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        MochiGlassBadge("需要 LSPosed", MochiColors.Income)
+                        Text("支持抓取支付成功页商户与商品明细", fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                    }
+                    SwitchPreference(
+                        title = "启用 LSPosed 深度监听",
+                        summary = "开启后将自动关闭「免 Root 通知监听」，避免重复记账",
+                        checked = settings.useLsposedMode,
+                        onCheckedChange = { enable ->
+                            if (enable) {
+                                val hadFallback = settings.fallbackNotificationListener
+                                onUpdateSettings(
+                                    settings.copy(
+                                        useLsposedMode = true,
+                                        fallbackNotificationListener = false,
+                                    ),
+                                )
+                                if (hadFallback) {
+                                    onShowMessage("已启用 LSPosed 方案，并自动关闭了免 Root 通知监听")
+                                }
+                            } else {
+                                onUpdateSettings(settings.copy(useLsposedMode = false))
+                            }
+                        },
+                    )
+                    if (settings.useLsposedMode) {
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        SwitchPreference(
+                            title = "监听微信支付 (com.tencent.mm)",
+                            summary = "识别微信付款、转账、红包与支付页商品明细",
+                            checked = settings.hookWeChat,
+                            onCheckedChange = { onUpdateSettings(settings.copy(hookWeChat = it)) },
+                        )
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        SwitchPreference(
+                            title = "监听支付宝 (com.eg.android.AlipayGphone)",
+                            summary = "识别支付宝交易提醒、花呗消费与支付页商品明细",
+                            checked = settings.hookAlipay,
+                            onCheckedChange = { onUpdateSettings(settings.copy(hookAlipay = it)) },
+                        )
+                    }
+                }
+            }
+        }
+
+        // Scheme 2: Non-Root Notification Listener
+        item(key = "scheme_notification") {
+            SmallTitle(text = "方案二：免 Root 系统通知监听（与方案一互斥）")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        MochiGlassBadge("免 Root", MiuixTheme.colorScheme.primary)
+                        Text("通过系统通知栏监听微信/支付宝收付款提醒", fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                    }
+                    SwitchPreference(
+                        title = "启用免 Root 系统通知监听",
+                        summary = if (settings.useLsposedMode) {
+                            "当前已启用 LSPosed 方案；若继续开启将提示切换"
+                        } else {
+                            "无需 Root，开启系统通知使用权即可自动记账"
+                        },
+                        checked = settings.fallbackNotificationListener,
+                        onCheckedChange = { enable ->
+                            if (enable && settings.useLsposedMode) {
+                                conflictTargetScheme = "NOTIFICATION"
+                            } else {
+                                onUpdateSettings(settings.copy(fallbackNotificationListener = enable))
+                            }
+                        },
+                    )
                 }
             }
         }
@@ -479,6 +551,46 @@ fun AutoTrackScreen(
                         if (idx < state.activeRules.lastIndex) {
                             HorizontalDivider()
                         }
+                    }
+                }
+            }
+        }
+    }
+
+    if (conflictTargetScheme == "NOTIFICATION") {
+        Dialog(onDismissRequest = { conflictTargetScheme = null }) {
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(
+                    modifier = Modifier.padding(18.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text("自动记账方案提示", fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        text = "你当前已开启「方案一：Root / LSPosed 深度监听」。为防止重复记账与浪费后台资源，不建议同时开启「免 Root 通知监听」。\n\n是否关闭 LSPosed 方案并切换为免 Root 通知监听？",
+                        fontSize = 13.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    )
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        TextButton(
+                            text = "保持 LSPosed",
+                            onClick = { conflictTargetScheme = null },
+                            modifier = Modifier.weight(1f),
+                        )
+                        TextButton(
+                            text = "切换为通知监听",
+                            onClick = {
+                                onUpdateSettings(
+                                    settings.copy(
+                                        useLsposedMode = false,
+                                        fallbackNotificationListener = true,
+                                    ),
+                                )
+                                conflictTargetScheme = null
+                                onShowMessage("已关闭 LSPosed 方案，切换为免 Root 系统通知监听")
+                            },
+                            colors = ButtonDefaults.textButtonColorsPrimary(),
+                            modifier = Modifier.weight(1f),
+                        )
                     }
                 }
             }

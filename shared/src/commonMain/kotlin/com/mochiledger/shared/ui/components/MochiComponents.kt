@@ -34,11 +34,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.mochiledger.shared.model.AccountType
 import com.mochiledger.shared.model.CategoryStat
 import com.mochiledger.shared.model.LedgerAccount
 import com.mochiledger.shared.model.LedgerCategory
 import com.mochiledger.shared.model.LedgerTransaction
-import com.mochiledger.shared.model.RecordSource
 import com.mochiledger.shared.model.TransactionType
 import com.mochiledger.shared.model.formatCents
 import com.mochiledger.shared.ui.theme.LocalMochiDark
@@ -122,6 +122,27 @@ fun MochiChip(
     }
 }
 
+fun resolveAccountVisual(name: String, type: AccountType, fallbackColorHex: Long = 0xFF4F6EF7): Pair<String, Color> {
+    val lower = name.trim().lowercase()
+    return when {
+        lower.contains("微信") || lower.contains("wechat") || lower.contains("零钱") ->
+            "wechat" to Color(0xFF07C160)
+        lower.contains("支付宝") || lower.contains("alipay") || lower.contains("花呗") || lower.contains("余额宝") ->
+            "alipay" to Color(0xFF1677FF)
+        lower.contains("银行") || lower.contains("储蓄") || lower.contains("招行") || lower.contains("工行") ||
+            lower.contains("建行") || lower.contains("农行") || lower.contains("中行") || lower.contains("交行") ||
+            lower.contains("邮储") || type == AccountType.BANK_CARD ->
+            "bank" to Color(0xFFE05252)
+        lower.contains("信用") || lower.contains("白条") || type == AccountType.CREDIT_CARD ->
+            "credit" to Color(0xFF7C4DFF)
+        lower.contains("现金") || type == AccountType.CASH ->
+            "cash" to Color(0xFF2B8A3E)
+        lower.contains("理财") || lower.contains("基金") || lower.contains("股票") || type == AccountType.INVESTMENT ->
+            "invest" to Color(0xFFFF9F1C)
+        else -> "wallet" to Color(fallbackColorHex)
+    }
+}
+
 @Composable
 fun TransactionRow(
     tx: LedgerTransaction,
@@ -168,35 +189,25 @@ fun TransactionRow(
         }
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = tx.merchant.ifBlank { category?.name ?: "未分类" },
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (tx.source != RecordSource.MANUAL) {
-                    Spacer(Modifier.width(6.dp))
-                    val badgeColor = when (tx.source) {
-                        RecordSource.WECHAT_LSPOSED -> MochiColors.WeChatGreen
-                        RecordSource.ALIPAY_LSPOSED -> MochiColors.AlipayBlue
-                        else -> MiuixTheme.colorScheme.primary
-                    }
-                    MochiGlassBadge(text = tx.source.label, color = badgeColor)
-                }
-            }
+            Text(
+                text = tx.merchant.ifBlank { category?.name ?: "未分类" },
+                fontSize = 15.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
             Spacer(Modifier.height(3.dp))
-            val accountDesc = if (tx.type == TransactionType.TRANSFER && targetAccount != null) {
-                "${account?.name ?: "账户"} → ${targetAccount.name}"
+            val walletDesc = if (tx.type == TransactionType.TRANSFER && targetAccount != null) {
+                "${account?.name ?: "钱包"} → ${targetAccount.name}"
             } else {
-                account?.name ?: "默认账户"
+                account?.name ?: "默认钱包"
             }
+            val cleanNote = tx.note
+                .takeIf { it.isNotBlank() && it != tx.merchant && it != "微信支付" && it != "支付宝" }
             val subText = listOfNotNull(
-                category?.name,
-                accountDesc,
-                tx.note.takeIf { it.isNotBlank() && it != tx.merchant },
                 timeText,
+                walletDesc,
+                cleanNote,
             ).joinToString(" · ")
             Text(
                 text = subText,
