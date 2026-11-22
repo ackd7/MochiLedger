@@ -17,13 +17,12 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -66,7 +65,8 @@ enum class MochiTab(val title: String, val iconKey: String) {
 @Composable
 fun MochiLedgerApp(
     repository: LedgerRepository = remember { LedgerRepository() },
-    desktopTopBar: (@Composable () -> Unit)? = null,
+    desktopTopBar: (@Composable (String) -> Unit)? = null,
+    windowCornerRadius: Dp = 0.dp,
 ) {
     val state by repository.state.collectAsState()
     val supportsLsposed = remember { PlatformBridge.getAutoTrackRuntimeStatus().supportsLsposed }
@@ -90,74 +90,54 @@ fun MochiLedgerApp(
     }
 
     MochiLedgerTheme(appearance = state.metadata.appearance) {
-        BoxWithConstraints(modifier = Modifier.fillMaxSize().background(MiuixTheme.colorScheme.background)) {
+        val windowShape = mochiShape(windowCornerRadius)
+        val rootModifier = if (windowCornerRadius > 0.dp) {
+            Modifier
+                .fillMaxSize()
+                .clip(windowShape)
+                .background(MiuixTheme.colorScheme.background)
+                .border(1.dp, MiuixTheme.colorScheme.outline.copy(alpha = 0.25f), windowShape)
+        } else {
+            Modifier
+                .fillMaxSize()
+                .background(MiuixTheme.colorScheme.background)
+        }
+
+        BoxWithConstraints(modifier = rootModifier) {
             val isWideScreen = maxWidth >= 760.dp
+            val floatingBarInset = 98.dp
 
-            if (isWideScreen) {
+            if (desktopTopBar != null) {
+                // Unified Desktop layout: integrated top bar + centered content + floating bottom pill dock
                 Column(modifier = Modifier.fillMaxSize()) {
-                    // Integrated borderless desktop top bar (draggable + min/max/close)
-                    desktopTopBar?.invoke()
-
-                    Row(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                        // Desktop Navigation Sidebar (4 clean flat-icon tabs)
-                        Column(
+                    desktopTopBar("墨记 · ${currentTab.title}")
+                    Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                        Box(
                             modifier = Modifier
-                                .width(210.dp)
-                                .fillMaxHeight()
-                                .background(MiuixTheme.colorScheme.surface)
-                                .padding(horizontal = 14.dp, vertical = 16.dp),
-                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                .fillMaxSize()
+                                .align(Alignment.TopCenter)
+                                .widthIn(max = 920.dp),
                         ) {
-                            Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
-                                Text("墨记 MochiLedger", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                                Text(
-                                    "跨端开源记账 · 同步互通",
-                                    fontSize = 11.sp,
-                                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                )
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            MochiTab.entries.forEach { tab ->
-                                val selected = currentTab == tab
-                                val bg = if (selected) MiuixTheme.colorScheme.primary.copy(alpha = 0.14f) else Color.Transparent
-                                val fg = if (selected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.onSurface
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .clip(mochiShape(14.dp))
-                                        .background(bg)
-                                        .clickable { currentTab = tab }
-                                        .padding(horizontal = 14.dp, vertical = 12.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    FlatIcon(name = tab.iconKey, tint = fg, size = 19.dp)
-                                    Spacer(Modifier.width(12.dp))
-                                    Text(
-                                        text = tab.title,
-                                        color = fg,
-                                        fontSize = 14.sp,
-                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                    )
-                                }
-                            }
-                        }
-
-                        // Main Content
-                        Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
                             MochiMainContent(
                                 tab = currentTab,
                                 state = state,
                                 repository = repository,
                                 supportsLsposed = supportsLsposed,
                                 onShowMessage = ::showMessage,
-                                bottomInset = 0.dp,
+                                bottomInset = floatingBarInset,
                             )
                         }
+
+                        FloatingPillBottomBar(
+                            currentTab = currentTab,
+                            onSelectTab = { currentTab = it },
+                            isWideScreen = isWideScreen,
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                        )
                     }
                 }
             } else {
-                // Mobile Android Adaptive Scaffold with spacious 4-tab Floating Pill Bottom Bar
-                val floatingBarInset = 98.dp
+                // Unified Mobile layout: top app bar + content + floating bottom pill dock
                 Scaffold(
                     topBar = {
                         SmallTopAppBar(title = "墨记 · ${currentTab.title}")
@@ -173,61 +153,12 @@ fun MochiLedgerApp(
                             bottomInset = floatingBarInset,
                         )
 
-                        // Floating enlarged Mochi bottom navigation bar with flat vector icons
-                        Box(
-                            modifier = Modifier
-                                .align(Alignment.BottomCenter)
-                                .navigationBarsPadding()
-                                .padding(horizontal = 16.dp, vertical = 12.dp)
-                                .fillMaxWidth()
-                                .shadow(elevation = 14.dp, shape = mochiShape(28.dp))
-                                .clip(mochiShape(28.dp))
-                                .background(MiuixTheme.colorScheme.surface.copy(alpha = 0.96f))
-                                .border(
-                                    width = 1.dp,
-                                    color = MiuixTheme.colorScheme.outline.copy(alpha = 0.25f),
-                                    shape = mochiShape(28.dp),
-                                )
-                                .padding(horizontal = 8.dp, vertical = 8.dp),
-                        ) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.SpaceEvenly,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                MochiTab.entries.forEach { tab ->
-                                    val selected = currentTab == tab
-                                    val fg = if (selected) {
-                                        MiuixTheme.colorScheme.primary
-                                    } else {
-                                        MiuixTheme.colorScheme.onSurfaceVariantSummary
-                                    }
-                                    Column(
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .clip(mochiShape(20.dp))
-                                            .background(
-                                                if (selected) MiuixTheme.colorScheme.primary.copy(alpha = 0.16f)
-                                                else Color.Transparent,
-                                            )
-                                            .clickable { currentTab = tab }
-                                            .padding(vertical = 9.dp),
-                                        horizontalAlignment = Alignment.CenterHorizontally,
-                                        verticalArrangement = Arrangement.Center,
-                                    ) {
-                                        FlatIcon(name = tab.iconKey, tint = fg, size = 22.dp)
-                                        Spacer(Modifier.height(3.dp))
-                                        Text(
-                                            text = tab.title,
-                                            fontSize = 12.sp,
-                                            color = fg,
-                                            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                            maxLines = 1,
-                                        )
-                                    }
-                                }
-                            }
-                        }
+                        FloatingPillBottomBar(
+                            currentTab = currentTab,
+                            onSelectTab = { currentTab = it },
+                            isWideScreen = isWideScreen,
+                            modifier = Modifier.align(Alignment.BottomCenter),
+                        )
                     }
                 }
             }
@@ -239,7 +170,7 @@ fun MochiLedgerApp(
                 exit = fadeOut(),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = if (isWideScreen) 24.dp else 112.dp, start = 20.dp, end = 20.dp),
+                    .padding(bottom = 112.dp, start = 20.dp, end = 20.dp),
             ) {
                 Box(
                     modifier = Modifier
@@ -252,6 +183,68 @@ fun MochiLedgerApp(
                         color = Color.White,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Medium,
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun FloatingPillBottomBar(
+    currentTab: MochiTab,
+    onSelectTab: (MochiTab) -> Unit,
+    isWideScreen: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val barModifier = modifier
+        .navigationBarsPadding()
+        .padding(horizontal = 16.dp, vertical = 14.dp)
+        .let { m -> if (isWideScreen) m.widthIn(max = 460.dp).fillMaxWidth() else m.fillMaxWidth() }
+        .shadow(elevation = 16.dp, shape = mochiShape(28.dp))
+        .clip(mochiShape(28.dp))
+        .background(MiuixTheme.colorScheme.surface.copy(alpha = 0.96f))
+        .border(
+            width = 1.dp,
+            color = MiuixTheme.colorScheme.outline.copy(alpha = 0.25f),
+            shape = mochiShape(28.dp),
+        )
+        .padding(horizontal = 8.dp, vertical = 8.dp)
+
+    Box(modifier = barModifier) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            MochiTab.entries.forEach { tab ->
+                val selected = currentTab == tab
+                val fg = if (selected) {
+                    MiuixTheme.colorScheme.primary
+                } else {
+                    MiuixTheme.colorScheme.onSurfaceVariantSummary
+                }
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(mochiShape(20.dp))
+                        .background(
+                            if (selected) MiuixTheme.colorScheme.primary.copy(alpha = 0.16f)
+                            else Color.Transparent,
+                        )
+                        .clickable { onSelectTab(tab) }
+                        .padding(vertical = 9.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                ) {
+                    FlatIcon(name = tab.iconKey, tint = fg, size = 22.dp)
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = tab.title,
+                        fontSize = 12.sp,
+                        color = fg,
+                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                        maxLines = 1,
                     )
                 }
             }

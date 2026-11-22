@@ -1,23 +1,27 @@
 package com.mochiledger.desktop
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.window.WindowDraggableArea
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.BitmapPainter
 import androidx.compose.ui.graphics.toComposeImageBitmap
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPlacement
 import androidx.compose.ui.window.application
@@ -26,14 +30,15 @@ import com.mochiledger.shared.ui.MochiLedgerApp
 import com.mochiledger.shared.ui.components.FlatIcon
 import com.mochiledger.shared.ui.theme.MochiColors
 import com.mochiledger.shared.ui.theme.mochiShape
-import org.jetbrains.skia.Image
+import org.jetbrains.skia.Image as SkiaImage
+import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 fun main() = application {
-    val windowState = rememberWindowState(size = DpSize(1160.dp, 760.dp))
+    val windowState = rememberWindowState(size = DpSize(1040.dp, 760.dp))
     val windowIcon = runCatching {
         val bytes = Thread.currentThread().contextClassLoader.getResourceAsStream("icon.png")?.readBytes()
-        bytes?.let { BitmapPainter(Image.makeFromEncoded(it).toComposeImageBitmap()) }
+        bytes?.let { BitmapPainter(SkiaImage.makeFromEncoded(it).toComposeImageBitmap()) }
     }.getOrNull()
 
     Window(
@@ -42,19 +47,38 @@ fun main() = application {
         title = "墨记 MochiLedger",
         icon = windowIcon,
         undecorated = true,
+        transparent = true,
     ) {
+        val isMaximized = windowState.placement == WindowPlacement.Maximized
         MochiLedgerApp(
-            desktopTopBar = {
+            windowCornerRadius = if (isMaximized) 0.dp else 18.dp,
+            desktopTopBar = { pageTitle ->
                 WindowDraggableArea {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(38.dp)
+                            .height(44.dp)
                             .background(MiuixTheme.colorScheme.surface)
-                            .padding(horizontal = 12.dp),
-                        horizontalArrangement = Arrangement.End,
+                            .padding(horizontal = 16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (windowIcon != null) {
+                                Image(
+                                    painter = windowIcon,
+                                    contentDescription = "MochiLedger",
+                                    modifier = Modifier.size(20.dp).clip(mochiShape(6.dp)),
+                                )
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Text(
+                                text = pageTitle,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                            )
+                        }
+
                         Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Box(
                                 modifier = Modifier
@@ -72,7 +96,7 @@ fun main() = application {
                                     .clip(mochiShape(8.dp))
                                     .background(MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.65f))
                                     .clickable {
-                                        windowState.placement = if (windowState.placement == WindowPlacement.Maximized) {
+                                        windowState.placement = if (isMaximized) {
                                             WindowPlacement.Floating
                                         } else {
                                             WindowPlacement.Maximized

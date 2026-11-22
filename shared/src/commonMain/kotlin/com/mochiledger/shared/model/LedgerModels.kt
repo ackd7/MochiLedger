@@ -208,7 +208,7 @@ data class ChangelogEntry(
 )
 
 object AppInfo {
-    const val VERSION_NAME = "1.0.8"
+    const val VERSION_NAME = "1.0.9"
     const val GITHUB_OWNER = "ackd7"
     const val GITHUB_REPO = "MochiLedger"
     const val GITHUB_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO"
@@ -216,6 +216,14 @@ object AppInfo {
     const val RELEASES_LATEST_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
 
     val CHANGELOG: List<ChangelogEntry> = listOf(
+        ChangelogEntry(
+            version = "v1.0.9",
+            title = "Windows 圆角窗口 · 电脑与手机端统一底部悬浮导航",
+            changes = listOf(
+                "电脑端移除左侧边栏，改为与手机端完全一致的底部悬浮胶囊导航栏，保持全端统一视觉体验",
+                "Windows 端启用透明无边框圆角窗口（18dp 圆角 + 细微玻璃边框，最大化时自动贴合屏幕边缘）",
+            ),
+        ),
         ChangelogEntry(
             version = "v1.0.8",
             title = "统计页布局与动态月份标题优化",
