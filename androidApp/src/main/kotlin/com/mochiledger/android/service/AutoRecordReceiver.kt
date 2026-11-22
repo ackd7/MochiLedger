@@ -42,7 +42,7 @@ class AutoRecordReceiver : BroadcastReceiver() {
         val savedTx = repo.recordParsedPayment(parsed) ?: return
 
         if (settings.floatingConfirmEnabled) {
-            QuickConfirmOverlayService.show(context, savedTx.id, settings.floatingConfirmSeconds)
+            QuickConfirmOverlayManager.show(context, savedTx.id, settings.floatingConfirmSeconds)
         }
 
         postConfirmationNotification(

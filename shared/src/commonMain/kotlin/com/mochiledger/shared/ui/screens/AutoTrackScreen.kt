@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -40,6 +41,7 @@ import com.mochiledger.shared.ui.components.MochiChip
 import com.mochiledger.shared.ui.components.MochiGlassBadge
 import com.mochiledger.shared.ui.theme.MochiColors
 import com.mochiledger.shared.ui.theme.mochiShape
+import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
@@ -65,6 +67,15 @@ fun AutoTrackScreen(
     var runtime by remember { mutableStateOf(PlatformBridge.getAutoTrackRuntimeStatus()) }
     val settings = state.metadata.autoTrack
     val categoryMap = remember(state.categories) { state.categories.associateBy { it.id } }
+
+    // Auto-refresh permission health status every 2s so returning from Android system settings updates immediately
+    LaunchedEffect(Unit) {
+        if (!runtime.supportsLsposed) return@LaunchedEffect
+        while (true) {
+            delay(2000L)
+            runtime = PlatformBridge.getAutoTrackRuntimeStatus()
+        }
+    }
 
     var simChannel by remember { mutableStateOf(PaymentChannel.WECHAT) }
     var simTitle by remember { mutableStateOf("微信支付") }

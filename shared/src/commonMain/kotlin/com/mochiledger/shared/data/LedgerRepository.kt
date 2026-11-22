@@ -556,7 +556,8 @@ class LedgerRepository(
         val fileName = "MochiLedger-daily-$tag.mochi.json"
         val json = createFullBackupJson(cfg.includeServerConfig)
         val saved = driver.saveLocalBackup(fileName, json, cfg.maxLocalBackups)
-        updateAutoBackupConfig(cfg.copy(lastDailyBackupDate = today, lastAutoBackupAt = now))
+        val latestCfg = _state.value.metadata.autoBackup
+        updateAutoBackupConfig(latestCfg.copy(lastDailyBackupDate = today, lastAutoBackupAt = now))
         refreshLocalBackups()
 
         if (cfg.alsoSyncRemote && hasAnyEnabledRemoteSync()) {
@@ -585,7 +586,8 @@ class LedgerRepository(
         val fileName = "MochiLedger-scheduled-$tag.mochi.json"
         val json = createFullBackupJson(cfg.includeServerConfig)
         val saved = driver.saveLocalBackup(fileName, json, cfg.maxLocalBackups)
-        updateAutoBackupConfig(cfg.copy(lastAutoBackupAt = now))
+        val latestCfg = _state.value.metadata.autoBackup
+        updateAutoBackupConfig(latestCfg.copy(lastAutoBackupAt = now))
         refreshLocalBackups()
 
         if (cfg.alsoSyncRemote && hasAnyEnabledRemoteSync()) {

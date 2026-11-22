@@ -216,12 +216,12 @@ class MochiLedgerCoreTest {
         val json = LedgerJson.codec.encodeToString(snapshot)
         val decoded = LedgerJson.codec.decodeFromString<LedgerSnapshot>(json)
 
-        assertNotNull(decoded.serverConfig)
-        assertEquals("https://sync.ackd7.dpdns.org", decoded.serverConfig?.selfHosted?.serverUrl)
-        assertEquals("qq0759", decoded.serverConfig?.selfHosted?.authToken)
-        assertEquals("tester@example.com", decoded.serverConfig?.webDav?.username)
-        assertTrue(decoded.serverConfig?.autoBackup?.dailyFirstOpenEnabled == true)
-        assertEquals(6, decoded.serverConfig?.autoBackup?.intervalHours)
+        val cfg = assertNotNull(decoded.serverConfig)
+        assertEquals("https://sync.ackd7.dpdns.org", cfg.selfHosted.serverUrl)
+        assertEquals("qq0759", cfg.selfHosted.authToken)
+        assertEquals("tester@example.com", cfg.webDav.username)
+        assertTrue(cfg.autoBackup.dailyFirstOpenEnabled)
+        assertEquals(6, cfg.autoBackup.intervalHours)
     }
 
     @Test

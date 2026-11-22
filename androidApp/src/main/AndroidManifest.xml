@@ -66,11 +66,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Lightweight floating quick-confirm banner after auto-recording -->
-        <service
-            android:name=".service.QuickConfirmOverlayService"
-            android:exported="false" />
-
         <!-- Fallback NotificationListenerService for non-LSPosed / non-root devices -->
         <service
             android:name=".service.PaymentNotificationListenerService"
