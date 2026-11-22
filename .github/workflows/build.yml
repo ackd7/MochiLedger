@@ -12,8 +12,8 @@ permissions:
   contents: write
 
 jobs:
-  test-and-server:
-    name: Shared Tests & Sync Server
+  shared-tests:
+    name: Shared Unit Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,16 +22,8 @@ jobs:
           distribution: temurin
           java-version: 21
       - uses: gradle/actions/setup-gradle@v4
-      - name: Run Shared & Server Tests
-        run: ./gradlew :shared:desktopTest :syncServer:test :syncServer:installDist --no-daemon
-      - name: Package Sync Server Zip
-        run: |
-          cd syncServer/build/install
-          zip -r MochiLedger-sync-server.zip syncServer
-      - uses: actions/upload-artifact@v4
-        with:
-          name: mochiledger-sync-server
-          path: syncServer/build/install/MochiLedger-sync-server.zip
+      - name: Run Shared Unit Tests
+        run: ./gradlew :shared:desktopTest --no-daemon
 
   build-android:
     name: Android APK (with LSPosed Module)
@@ -81,7 +73,7 @@ jobs:
             choco install nsis -y --no-progress
             $makensis = "C:\Program Files (x86)\NSIS\makensis.exe"
           }
-          $ver = if ($env:GITHUB_REF_NAME -match '^v(.+)$') { $Matches[1] } else { "1.0.1" }
+          $ver = if ($env:GITHUB_REF_NAME -match '^v(.+)$') { $Matches[1] } else { "1.0.9" }
           $srcDir = (Resolve-Path "desktopApp\build\compose\binaries\main\app\MochiLedger").Path
           $outFile = Join-Path (Get-Location).Path "MochiLedger-windows-x64-setup.exe"
           & $makensis "/INPUTCHARSET" "UTF8" "/DAPP_VERSION=$ver" "/DSOURCE_DIR=$srcDir" "/DOUTPUT_FILE=$outFile" "desktopApp\packaging\windows\installer.nsi"
@@ -99,7 +91,7 @@ jobs:
 
   publish-release:
     name: Publish GitHub Release
-    needs: [ test-and-server, build-android, build-windows ]
+    needs: [ shared-tests, build-android, build-windows ]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:
@@ -118,7 +110,6 @@ jobs:
           cp release-artifacts/MochiLedger-android-armeabi-v7a.apk "release-files/MochiLedger-${TAG}-android-armeabi-v7a.apk"
           cp release-artifacts/MochiLedger-windows-x64-setup.exe "release-files/MochiLedger-${TAG}-windows-x64-setup.exe"
           cp release-artifacts/MochiLedger-windows-x64-portable.zip "release-files/MochiLedger-${TAG}-windows-x64-portable.zip"
-          cp release-artifacts/MochiLedger-sync-server.zip "release-files/MochiLedger-${TAG}-sync-server.zip"
           ls -lh release-files
       - name: Build Release Notes with Changelog
         run: |
@@ -139,7 +130,8 @@ jobs:
             echo "- **Android 通用版（32/64位均可安装）**：\`MochiLedger-${TAG}-android-universal.apk\`"
             echo "- **Android 64位版（arm64-v8a）**：\`MochiLedger-${TAG}-android-arm64-v8a.apk\`"
             echo "- **Android 32位版（armeabi-v7a）**：\`MochiLedger-${TAG}-android-armeabi-v7a.apk\`"
-            echo "- **独立自建同步服务端（Ktor）**：\`MochiLedger-${TAG}-sync-server.zip\`"
+            echo ""
+            echo "> 独立同步服务端（支持 Cloudflare Workers + KV 免费部署与 Docker 自建）已拆分至独立仓库：[ackd7/MochiLedger-SyncServer](https://github.com/ackd7/MochiLedger-SyncServer)"
           } > release-notes.md
           cat release-notes.md
       - name: Create GitHub Release

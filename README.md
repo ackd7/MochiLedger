@@ -12,7 +12,7 @@ UI 视觉与交互设计融合参考了：
 
 - **Windows & Android 双端互通**：共用同一套 SQLite Schema 与 `.mochi.json` 跨端快照格式，支持 JSON / CSV 导入导出。
 - **WebDAV 双向合并同步与备份**：内置坚果云、Nextcloud、Alist 预设，支持 LWW（Last-Write-Wins）按记录 UUID 冲突合并与时间戳快照备份。
-- **自建同步服务器（开箱即用）**：仓库内置轻量级 Ktor + Netty 同步服务端（`:syncServer`），提供 `Dockerfile` 与 `docker-compose.yml`，支持 Bearer Token 认证与多账本隔离。
+- **独立同步服务端**：已拆分至独立仓库 [ackd7/MochiLedger-SyncServer](https://github.com/ackd7/MochiLedger-SyncServer)，支持 **Cloudflare Workers + KV（0 元免服务器）** 与 **Ktor + Docker（NAS / VPS 自建）** 两种部署方式。
 - **LSPosed 微信 / 支付宝自动记账**：
   - 声明标准 `xposedmodule`、`xposedscope`（`com.tencent.mm`、`com.eg.android.AlipayGphone`）与 `assets/xposed_init`。
   - 支持自 Hook 实时检测 LSPosed 模块激活状态。

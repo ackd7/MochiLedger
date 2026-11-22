@@ -28,7 +28,6 @@ val hasAndroidSdk = !System.getenv("ANDROID_HOME").isNullOrBlank() ||
 
 include(":shared")
 include(":desktopApp")
-include(":syncServer")
 
 if (hasAndroidSdk) {
     include(":androidApp")
