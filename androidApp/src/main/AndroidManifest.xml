@@ -38,6 +38,23 @@
             </intent-filter>
         </activity>
 
+        <!-- Silent DeepLink bridge for AutoAccounting / Tasker (mochiledger://add?...) -->
+        <activity
+            android:name=".service.DeepLinkRecordActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:scheme="mochiledger"
+                    android:host="add" />
+            </intent-filter>
+        </activity>
+
         <!-- Receives structured payment events from LSPosed hooks in WeChat / Alipay -->
         <receiver
             android:name=".service.AutoRecordReceiver"

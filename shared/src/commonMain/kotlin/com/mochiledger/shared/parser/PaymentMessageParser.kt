@@ -39,7 +39,7 @@ object PaymentMessageParser {
     )
 
     private val expenseKeywords = listOf(
-        "付款", "支付", "消费", "支出", "扣款", "已支付", "成功付款", "支付成功", "花呗", "自动扣费", "免密支付", "发出红包",
+        "付款", "支付", "消费", "支出", "扣款", "已支付", "成功付款", "支付成功", "付款成功", "交易成功", "花呗", "自动扣费", "免密支付", "发出红包",
     )
 
     private val ignoreKeywords = listOf(

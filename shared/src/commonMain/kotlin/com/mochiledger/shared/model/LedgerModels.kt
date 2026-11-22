@@ -208,7 +208,7 @@ data class ChangelogEntry(
 )
 
 object AppInfo {
-    const val VERSION_NAME = "1.0.5"
+    const val VERSION_NAME = "1.0.6"
     const val GITHUB_OWNER = "ackd7"
     const val GITHUB_REPO = "MochiLedger"
     const val GITHUB_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO"
@@ -216,6 +216,15 @@ object AppInfo {
     const val RELEASES_LATEST_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
 
     val CHANGELOG: List<ChangelogEntry> = listOf(
+        ChangelogEntry(
+            version = "v1.0.6",
+            title = "LSPosed 支付成功页 UI 捕获 · AutoAccounting 静默协议",
+            changes = listOf(
+                "LSPosed 模块新增支付成功页 UI 捕获（不依赖微信/支付宝混淆类名，关闭通知推送也能自动记账）",
+                "开放静默记账协议 mochiledger://add，支持与 AutoAccounting（自动记账）及 Tasker 无缝联动",
+                "增强支付结果页文案识别与防重复去重机制",
+            ),
+        ),
         ChangelogEntry(
             version = "v1.0.5",
             title = "Android 应用图标 · 页面切换动效 · 系统返回手势 · 极简返回按钮",

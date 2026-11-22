@@ -159,4 +159,22 @@ class MochiLedgerCoreTest {
         assertEquals("acc_2", merged.accounts.first().id)
         assertEquals("acc_2", merged.transactions.first().accountId)
     }
+
+    @Test
+    fun parseLsposedPaymentSuccessUiScreenText() {
+        val parsed = PaymentMessageParser.parse(
+            packageName = PaymentChannel.WECHAT.packageName,
+            title = "微信支付",
+            content = "支付成功 星巴克咖啡 ￥32.00 付款方式 零钱 完成",
+            rules = rules,
+            accounts = accounts,
+            nowMillis = now,
+        )
+        assertNotNull(parsed)
+        assertEquals(PaymentChannel.WECHAT, parsed.channel)
+        assertEquals(TransactionType.EXPENSE, parsed.type)
+        assertEquals(3200L, parsed.amountCents)
+        assertEquals("cat_food", parsed.suggestedCategoryId)
+        assertEquals("acc_wechat", parsed.suggestedAccountId)
+    }
 }

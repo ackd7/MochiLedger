@@ -90,9 +90,9 @@ fun AutoTrackScreen(
                 else -> "当前为桌面端（自动记账规则与 Android 互通同步）"
             }
             val statusDesc = when {
-                runtime.lsposedActive -> "正在监听微信 (com.tencent.mm) 与支付宝 (com.eg.android.AlipayGphone) 支付通知与收付款事件。"
-                runtime.supportsLsposed -> "也可开启下方「系统通知监听」作为无 Root 降级方案。"
-                else -> "您可以在 Windows 端编辑自动分类规则、测试解析模板，通过 WebDAV 或自建服务器同步到 Android 手机生效。"
+                runtime.lsposedActive -> "已启用双层 Hook：微信/支付宝通知拦截 + 支付成功页 UI 捕获（即使关闭通知推送也能自动入账）。"
+                runtime.supportsLsposed -> "也可开启下方「系统通知监听」作为无 Root 降级方案，或通过 mochiledger://add 协议接入 AutoAccounting。"
+                else -> "当前为桌面端，可在 Android 端使用 LSPosed 与 AutoAccounting 协议自动记账。"
             }
 
             Box(
@@ -154,6 +154,26 @@ fun AutoTrackScreen(
                         summary = "未启用 LSPosed 时通过 NotificationListenerService 兜底",
                         checked = settings.fallbackNotificationListener,
                         onCheckedChange = { onUpdateSettings(settings.copy(fallbackNotificationListener = it)) },
+                    )
+                }
+            }
+        }
+
+        // Open DeepLink Integration for AutoAccounting / Tasker
+        item(key = "deeplink_protocol") {
+            SmallTitle(text = "开放协议（兼容 AutoAccounting / Tasker）")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("静默记账 URI 协议", fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                    Text(
+                        text = "mochiledger://add?type=expense&amount=32.50&merchant=星巴克&category=餐饮美食&account=支付宝&remark=拿铁",
+                        fontSize = 12.sp,
+                        color = MiuixTheme.colorScheme.primary,
+                    )
+                    Text(
+                        text = "支持 type (expense/income/transfer)、amount/money、merchant/shop、category/cat、account、remark/note 参数，调用后后台静默入账不打断当前页面。",
+                        fontSize = 12.sp,
+                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                     )
                 }
             }
