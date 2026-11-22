@@ -1,5 +1,9 @@
 # 更新日志 (Changelog)
 
+## v1.0.7
+- **修复 Android 安装后图标回退问题**：补全 `mdpi` ~ `xxxhdpi` 全分辨率 PNG 图标并将自适应背景改为高兼容线性渐变 `shape`，彻底解决 HyperOS / MIUI 等桌面安装后显示默认机器人图标的问题。
+- **Windows 与 Android 图标完全统一**：同步为 Windows `.exe`、NSIS 安装包及任务栏配置同一套高清墨蓝账本图标（`icon.ico` / `icon.png`）。
+
 ## v1.0.6
 - **LSPosed 支付成功页 UI 捕获**：在微信与支付宝支付结果页自动扫描可见支付文案与金额，免逆向混淆类名，关闭系统通知推送也能自动记账。
 - **开放 `mochiledger://add` 静默记账协议**：兼容 AutoAccounting（自动记账）、Tasker、MacroDroid 等工具后台静默入账，不打断当前页面。

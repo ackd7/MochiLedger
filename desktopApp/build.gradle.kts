@@ -28,7 +28,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "MochiLedger"
-            packageVersion = "1.0.6"
+            packageVersion = "1.0.7"
             description = "墨记 MochiLedger — 跨端开源记账软件"
             vendor = "ackd7"
             modules("java.sql", "java.naming", "java.logging", "jdk.crypto.ec")
@@ -37,6 +37,7 @@ compose.desktop {
                 menuGroup = "MochiLedger"
                 upgradeUuid = "b7a5e8f2-4c91-4d32-9e11-7d5c2b9a4f01"
                 shortcut = true
+                iconFile.set(project.file("packaging/windows/icon.ico"))
             }
         }
     }

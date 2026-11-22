@@ -14,6 +14,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.BitmapPainter
+import androidx.compose.ui.graphics.toComposeImageBitmap
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
@@ -24,14 +26,21 @@ import com.mochiledger.shared.ui.MochiLedgerApp
 import com.mochiledger.shared.ui.components.FlatIcon
 import com.mochiledger.shared.ui.theme.MochiColors
 import com.mochiledger.shared.ui.theme.mochiShape
+import org.jetbrains.skia.Image
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
 fun main() = application {
     val windowState = rememberWindowState(size = DpSize(1160.dp, 760.dp))
+    val windowIcon = runCatching {
+        val bytes = Thread.currentThread().contextClassLoader.getResourceAsStream("icon.png")?.readBytes()
+        bytes?.let { BitmapPainter(Image.makeFromEncoded(it).toComposeImageBitmap()) }
+    }.getOrNull()
+
     Window(
         onCloseRequest = ::exitApplication,
         state = windowState,
         title = "墨记 MochiLedger",
+        icon = windowIcon,
         undecorated = true,
     ) {
         MochiLedgerApp(

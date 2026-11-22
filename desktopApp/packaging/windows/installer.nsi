@@ -30,6 +30,8 @@ RequestExecutionLevel admin
 
 ; Modern UI configuration
 !define MUI_ABORTWARNING
+!define MUI_ICON "icon.ico"
+!define MUI_UNICON "icon.ico"
 !define MUI_FINISHPAGE_RUN "$INSTDIR\${APP_EXE}"
 !define MUI_FINISHPAGE_RUN_TEXT "立即启动 ${APP_DISPLAY_NAME}"
 

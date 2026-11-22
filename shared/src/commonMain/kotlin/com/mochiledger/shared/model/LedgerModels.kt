@@ -208,7 +208,7 @@ data class ChangelogEntry(
 )
 
 object AppInfo {
-    const val VERSION_NAME = "1.0.6"
+    const val VERSION_NAME = "1.0.7"
     const val GITHUB_OWNER = "ackd7"
     const val GITHUB_REPO = "MochiLedger"
     const val GITHUB_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO"
@@ -216,6 +216,14 @@ object AppInfo {
     const val RELEASES_LATEST_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
 
     val CHANGELOG: List<ChangelogEntry> = listOf(
+        ChangelogEntry(
+            version = "v1.0.7",
+            title = "Windows 与 Android 双端统一应用图标修复",
+            changes = listOf(
+                "修复部分 Android 桌面（如 HyperOS / MIUI）安装后应用图标回退为默认机器人的问题，补全全分辨率 mipmap PNG 并优化自适应背景",
+                "Windows 端 EXE、NSIS 安装程序与任务栏图标同步统一为同一套墨蓝账本图标，双端视觉完全一致",
+            ),
+        ),
         ChangelogEntry(
             version = "v1.0.6",
             title = "LSPosed 支付成功页 UI 捕获 · AutoAccounting 静默协议",
