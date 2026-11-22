@@ -3,8 +3,10 @@ package com.mochiledger.shared.data
 import com.mochiledger.shared.model.AccountSummary
 import com.mochiledger.shared.model.AccountType
 import com.mochiledger.shared.model.AppAppearanceConfig
+import com.mochiledger.shared.model.AutoBackupConfig
 import com.mochiledger.shared.model.AutoTrackRule
 import com.mochiledger.shared.model.AutoTrackSettings
+import com.mochiledger.shared.model.BackupServerConfigBundle
 import com.mochiledger.shared.model.CategoryStat
 import com.mochiledger.shared.model.DefaultLedgerSeed
 import com.mochiledger.shared.model.LedgerAccount
@@ -12,6 +14,7 @@ import com.mochiledger.shared.model.LedgerBudget
 import com.mochiledger.shared.model.LedgerCategory
 import com.mochiledger.shared.model.LedgerSnapshot
 import com.mochiledger.shared.model.LedgerTransaction
+import com.mochiledger.shared.model.LocalBackupFileInfo
 import com.mochiledger.shared.model.MonthlySummary
 import com.mochiledger.shared.model.ParsedPayment
 import com.mochiledger.shared.model.PaymentChannel
@@ -20,6 +23,7 @@ import com.mochiledger.shared.model.SelfHostedSyncConfig
 import com.mochiledger.shared.model.SyncMetadata
 import com.mochiledger.shared.model.TransactionType
 import com.mochiledger.shared.model.WebDavConfig
+import com.mochiledger.shared.model.formatFileSize
 import com.mochiledger.shared.parser.PaymentMessageParser
 import com.mochiledger.shared.platform.LedgerDatabaseDriver
 import com.mochiledger.shared.platform.PlatformBridge
@@ -49,6 +53,8 @@ data class LedgerUiState(
     val rules: List<AutoTrackRule> = emptyList(),
     val metadata: SyncMetadata = SyncMetadata(),
     val databasePath: String = "",
+    val backupDirectoryPath: String = "",
+    val localBackups: List<LocalBackupFileInfo> = emptyList(),
     val isSyncing: Boolean = false,
 ) {
     val activeAccounts: List<LedgerAccount> get() = accounts.filter { !it.isDeleted }
@@ -176,13 +182,15 @@ class LedgerRepository(
             rules = snapshot.rules,
             metadata = meta,
             databasePath = driver.databasePath,
+            backupDirectoryPath = driver.backupDirectoryPath,
+            localBackups = driver.listLocalBackups(),
         )
     }
 
     fun currentSnapshot(): LedgerSnapshot {
         val s = _state.value
         return LedgerSnapshot(
-            schemaVersion = 1,
+            schemaVersion = 2,
             exportedAt = PlatformBridge.currentTimeMillis(),
             sourceDeviceId = s.metadata.deviceId,
             accounts = s.accounts,
@@ -191,6 +199,34 @@ class LedgerRepository(
             budgets = s.budgets,
             rules = s.rules,
         )
+    }
+
+    fun createFullBackupSnapshot(
+        includeServerConfig: Boolean = _state.value.metadata.autoBackup.includeServerConfig,
+    ): LedgerSnapshot {
+        val s = _state.value
+        val bundle = if (includeServerConfig) {
+            BackupServerConfigBundle(
+                webDav = s.metadata.webDav,
+                selfHosted = s.metadata.selfHosted,
+                autoTrack = s.metadata.autoTrack,
+                autoBackup = s.metadata.autoBackup,
+                appearance = s.metadata.appearance,
+            )
+        } else {
+            null
+        }
+        return currentSnapshot().copy(serverConfig = bundle)
+    }
+
+    fun createFullBackupJson(
+        includeServerConfig: Boolean = _state.value.metadata.autoBackup.includeServerConfig,
+    ): String {
+        return LedgerJson.codec.encodeToString(createFullBackupSnapshot(includeServerConfig))
+    }
+
+    fun refreshLocalBackups() {
+        _state.value = _state.value.copy(localBackups = driver.listLocalBackups())
     }
 
     private fun persist(updated: LedgerUiState) {
@@ -300,6 +336,12 @@ class LedgerRepository(
         _state.value = _state.value.copy(metadata = meta)
     }
 
+    fun updateAutoBackupConfig(config: AutoBackupConfig) {
+        val meta = _state.value.metadata.copy(autoBackup = config)
+        driver.saveSyncMetadata(meta)
+        _state.value = _state.value.copy(metadata = meta)
+    }
+
     fun parsePaymentPreview(
         packageName: String?,
         title: String,
@@ -390,7 +432,7 @@ class LedgerRepository(
             val now = PlatformBridge.currentTimeMillis()
             val dt = Instant.fromEpochMilliseconds(now).toLocalDateTime(TimeZone.currentSystemDefault())
             val tag = "${dt.year}${dt.monthNumber.toString().padStart(2, '0')}${dt.dayOfMonth.toString().padStart(2, '0')}-${dt.hour.toString().padStart(2, '0')}${dt.minute.toString().padStart(2, '0')}"
-            WebDavSyncClient.uploadBackupSnapshot(_state.value.metadata.webDav, currentSnapshot(), tag)
+            WebDavSyncClient.uploadBackupSnapshot(_state.value.metadata.webDav, createFullBackupSnapshot(), tag)
         } finally {
             _state.value = _state.value.copy(isSyncing = false)
         }
@@ -462,8 +504,9 @@ class LedgerRepository(
     }
 
     fun exportJsonBackup(): Result<String> {
-        val json = LedgerJson.codec.encodeToString(currentSnapshot())
-        return driver.exportTextFile("MochiLedger-backup-${PlatformBridge.currentTimeMillis()}.mochi.json", json)
+        val json = createFullBackupJson()
+        val tag = formatFileTimestamp(PlatformBridge.currentTimeMillis())
+        return driver.exportTextFile("MochiLedger-backup-$tag.mochi.json", json)
     }
 
     fun exportCsvBackup(): Result<String> {
@@ -476,16 +519,150 @@ class LedgerRepository(
         return driver.exportTextFile("MochiLedger-transactions-${PlatformBridge.currentTimeMillis()}.csv", csv)
     }
 
-    fun importJsonSnapshot(jsonText: String): SyncResult {
+    suspend fun performManualBackup(alsoSyncRemote: Boolean = false): SyncResult = withContext(Dispatchers.IO) {
+        val now = PlatformBridge.currentTimeMillis()
+        val cfg = _state.value.metadata.autoBackup
+        val tag = formatFileTimestamp(now)
+        val fileName = "MochiLedger-manual-$tag.mochi.json"
+        val json = createFullBackupJson(cfg.includeServerConfig)
+        val saved = driver.saveLocalBackup(fileName, json, cfg.maxLocalBackups)
+        refreshLocalBackups()
+        saved.fold(
+            onSuccess = { info ->
+                var msg = "手动备份成功：${info.fileName}（${formatFileSize(info.sizeBytes)}）"
+                if (cfg.includeServerConfig) msg += "，已含服务器配置"
+                if (alsoSyncRemote && hasAnyEnabledRemoteSync()) {
+                    val remoteRes = syncAllEnabledSources()
+                    msg += if (remoteRes.success) " · 远端同步成功" else " · 远端同步提示：${remoteRes.message}"
+                }
+                SyncResult(true, msg, syncedAt = now)
+            },
+            onFailure = { e ->
+                SyncResult(false, "手动备份失败：${e.message}")
+            },
+        )
+    }
+
+    suspend fun checkAndRunDailyFirstOpenBackup(): SyncResult? = withContext(Dispatchers.IO) {
+        val cfg = _state.value.metadata.autoBackup
+        if (!cfg.dailyFirstOpenEnabled) return@withContext null
+        val now = PlatformBridge.currentTimeMillis()
+        val today = formatDateKey(now)
+        if (cfg.lastDailyBackupDate == today) return@withContext null
+
+        val tag = formatFileTimestamp(now)
+        val fileName = "MochiLedger-daily-$tag.mochi.json"
+        val json = createFullBackupJson(cfg.includeServerConfig)
+        val saved = driver.saveLocalBackup(fileName, json, cfg.maxLocalBackups)
+        updateAutoBackupConfig(cfg.copy(lastDailyBackupDate = today, lastAutoBackupAt = now))
+        refreshLocalBackups()
+
+        if (cfg.alsoSyncRemote && hasAnyEnabledRemoteSync()) {
+            runCatching { syncAllEnabledSources() }
+        }
+        saved.fold(
+            onSuccess = { info ->
+                val suffix = if (cfg.includeServerConfig) "（含服务器配置）" else ""
+                SyncResult(true, "已完成今日首次打开自动备份：${formatFileSize(info.sizeBytes)}$suffix", syncedAt = now)
+            },
+            onFailure = { e ->
+                SyncResult(false, "每日首开自动备份失败：${e.message}")
+            },
+        )
+    }
+
+    suspend fun checkAndRunScheduledBackup(): SyncResult? = withContext(Dispatchers.IO) {
+        val cfg = _state.value.metadata.autoBackup
+        if (!cfg.scheduledEnabled) return@withContext null
+        val now = PlatformBridge.currentTimeMillis()
+        val intervalMs = cfg.intervalHours.coerceAtLeast(1) * 3_600_000L
+        if (cfg.lastAutoBackupAt > 0L && (now - cfg.lastAutoBackupAt) < intervalMs) {
+            return@withContext null
+        }
+        val tag = formatFileTimestamp(now)
+        val fileName = "MochiLedger-scheduled-$tag.mochi.json"
+        val json = createFullBackupJson(cfg.includeServerConfig)
+        val saved = driver.saveLocalBackup(fileName, json, cfg.maxLocalBackups)
+        updateAutoBackupConfig(cfg.copy(lastAutoBackupAt = now))
+        refreshLocalBackups()
+
+        if (cfg.alsoSyncRemote && hasAnyEnabledRemoteSync()) {
+            runCatching { syncAllEnabledSources() }
+        }
+        saved.fold(
+            onSuccess = { info ->
+                SyncResult(true, "已完成定时自动备份：${formatFileSize(info.sizeBytes)}", syncedAt = now)
+            },
+            onFailure = { e ->
+                SyncResult(false, "定时自动备份失败：${e.message}")
+            },
+        )
+    }
+
+    fun importBackupFromFile(absolutePath: String, restoreServerConfig: Boolean = true): SyncResult {
+        return driver.readTextFile(absolutePath).fold(
+            onSuccess = { json -> importJsonSnapshot(json, restoreServerConfig) },
+            onFailure = { e -> SyncResult(false, "读取备份文件失败：${e.message}") },
+        )
+    }
+
+    fun deleteLocalBackup(absolutePath: String): Boolean {
+        val ok = driver.deleteLocalBackup(absolutePath)
+        refreshLocalBackups()
+        return ok
+    }
+
+    fun importJsonSnapshot(jsonText: String, restoreServerConfig: Boolean = true): SyncResult {
         return runCatching {
             val remote = LedgerJson.codec.decodeFromString<LedgerSnapshot>(jsonText)
             val now = PlatformBridge.currentTimeMillis()
             val merged = LedgerMerger.merge(currentSnapshot(), remote, now, _state.value.metadata.deviceId)
             applyMergedSnapshot(merged)
-            SyncResult(true, "已合并导入 ${remote.transactions.count { !it.isDeleted }} 条账单", merged, now)
+
+            var restoredConfig = false
+            if (restoreServerConfig && remote.serverConfig != null) {
+                val bundle = remote.serverConfig
+                val curMeta = _state.value.metadata
+                val updatedMeta = curMeta.copy(
+                    webDav = bundle.webDav,
+                    selfHosted = bundle.selfHosted,
+                    autoTrack = bundle.autoTrack,
+                    autoBackup = bundle.autoBackup.copy(
+                        lastAutoBackupAt = maxOf(curMeta.autoBackup.lastAutoBackupAt, bundle.autoBackup.lastAutoBackupAt),
+                        lastDailyBackupDate = curMeta.autoBackup.lastDailyBackupDate.ifBlank { bundle.autoBackup.lastDailyBackupDate },
+                    ),
+                    appearance = bundle.appearance ?: curMeta.appearance,
+                )
+                driver.saveSyncMetadata(updatedMeta)
+                _state.value = _state.value.copy(metadata = updatedMeta)
+                restoredConfig = true
+            }
+
+            val txCount = remote.transactions.count { !it.isDeleted }
+            val accCount = remote.accounts.count { !it.isDeleted }
+            val configNote = if (restoredConfig) "，并已还原同步服务器与备份配置" else ""
+            SyncResult(true, "已合并导入 $txCount 条账单、$accCount 个账户$configNote", merged, now)
         }.getOrElse { e ->
             SyncResult(false, "导入失败：JSON 格式无效（${e.message}）")
         }
+    }
+
+    private fun hasAnyEnabledRemoteSync(): Boolean {
+        val meta = _state.value.metadata
+        val useWebDav = meta.webDav.enabled && meta.webDav.serverUrl.isNotBlank() && meta.webDav.username.isNotBlank()
+        val useSelfHosted = meta.selfHosted.enabled && meta.selfHosted.serverUrl.isNotBlank()
+        return useWebDav || useSelfHosted
+    }
+
+    private fun formatDateKey(ms: Long): String {
+        val dt = Instant.fromEpochMilliseconds(ms).toLocalDateTime(TimeZone.currentSystemDefault())
+        return "${dt.year}-${dt.monthNumber.toString().padStart(2, '0')}-${dt.dayOfMonth.toString().padStart(2, '0')}"
+    }
+
+    private fun formatFileTimestamp(ms: Long): String {
+        val dt = Instant.fromEpochMilliseconds(ms).toLocalDateTime(TimeZone.currentSystemDefault())
+        return "${dt.year}${dt.monthNumber.toString().padStart(2, '0')}${dt.dayOfMonth.toString().padStart(2, '0')}-" +
+            "${dt.hour.toString().padStart(2, '0')}${dt.minute.toString().padStart(2, '0')}${dt.second.toString().padStart(2, '0')}"
     }
 
     private fun applyMergedSnapshot(merged: LedgerSnapshot) {

@@ -8,6 +8,7 @@ import android.database.sqlite.SQLiteOpenHelper
 import android.os.Build
 import android.provider.Settings
 import com.mochiledger.shared.model.LedgerSnapshot
+import com.mochiledger.shared.model.LocalBackupFileInfo
 import com.mochiledger.shared.model.SyncMetadata
 import com.mochiledger.shared.sync.LedgerJson
 import kotlinx.serialization.encodeToString
@@ -28,6 +29,12 @@ object AndroidPlatformContext {
 
     @Volatile
     var notificationListenerChecker: () -> Boolean = { false }
+
+    @Volatile
+    var openBackupFilePicker: (((Result<Pair<String, String>>) -> Unit) -> Unit)? = null
+
+    @Volatile
+    var saveBackupFilePicker: ((String, String, (Result<String>) -> Unit) -> Unit)? = null
 }
 
 private class AndroidSqliteDriver(private val context: Context) : LedgerDatabaseDriver {
@@ -91,6 +98,10 @@ private class AndroidSqliteDriver(private val context: Context) : LedgerDatabase
     }
 
     override val databasePath: String get() = context.getDatabasePath("mochiledger.db").absolutePath
+    override val backupDirectoryPath: String
+        get() = (context.getExternalFilesDir("backups") ?: File(context.filesDir, "backups"))
+            .apply { mkdirs() }
+            .absolutePath
 
     override fun loadSnapshot(): LedgerSnapshot? {
         return runCatching {
@@ -213,6 +224,61 @@ private class AndroidSqliteDriver(private val context: Context) : LedgerDatabase
             outFile.absolutePath
         }
     }
+
+    override fun saveLocalBackup(fileName: String, content: String, maxKeep: Int): Result<LocalBackupFileInfo> {
+        return runCatching {
+            val dir = File(backupDirectoryPath).apply { mkdirs() }
+            val outFile = File(dir, fileName)
+            outFile.writeText(content, Charsets.UTF_8)
+            if (maxKeep > 0) {
+                val allFiles = dir.listFiles { f -> f.isFile && f.name.endsWith(".json") }
+                    ?.sortedByDescending { it.lastModified() }
+                    .orEmpty()
+                val autoFiles = allFiles.filter { it.name.contains("-daily-") || it.name.contains("-scheduled-") }
+                if (autoFiles.size > maxKeep) {
+                    autoFiles.drop(maxKeep).forEach { runCatching { it.delete() } }
+                }
+            }
+            LocalBackupFileInfo(
+                fileName = outFile.name,
+                absolutePath = outFile.absolutePath,
+                sizeBytes = outFile.length(),
+                lastModifiedMs = outFile.lastModified(),
+                triggerType = detectBackupTrigger(outFile.name),
+            )
+        }
+    }
+
+    override fun listLocalBackups(): List<LocalBackupFileInfo> {
+        val dir = File(backupDirectoryPath)
+        if (!dir.exists()) return emptyList()
+        return dir.listFiles { f -> f.isFile && f.name.endsWith(".json") }
+            ?.sortedByDescending { it.lastModified() }
+            ?.map { f ->
+                LocalBackupFileInfo(
+                    fileName = f.name,
+                    absolutePath = f.absolutePath,
+                    sizeBytes = f.length(),
+                    lastModifiedMs = f.lastModified(),
+                    triggerType = detectBackupTrigger(f.name),
+                )
+            }
+            .orEmpty()
+    }
+
+    override fun readTextFile(absolutePath: String): Result<String> {
+        return runCatching { File(absolutePath).readText(Charsets.UTF_8) }
+    }
+
+    override fun deleteLocalBackup(absolutePath: String): Boolean {
+        return runCatching { File(absolutePath).delete() }.getOrDefault(false)
+    }
+
+    private fun detectBackupTrigger(name: String): String = when {
+        name.contains("-daily-") -> "daily"
+        name.contains("-scheduled-") -> "scheduled"
+        else -> "manual"
+    }
 }
 
 actual object PlatformBridge {
@@ -295,5 +361,36 @@ actual object PlatformBridge {
     actual fun defaultDeviceId(): String {
         val model = Build.MODEL?.replace(" ", "_") ?: "android"
         return "and-$model-${UUID.randomUUID().toString().take(6)}"
+    }
+
+    actual fun pickBackupFileContent(onResult: (Result<Pair<String, String>>) -> Unit) {
+        val picker = AndroidPlatformContext.openBackupFilePicker
+        if (picker != null) {
+            picker(onResult)
+        } else {
+            onResult(Result.failure(IllegalStateException("文件选择器尚未就绪")))
+        }
+    }
+
+    actual fun saveFileWithPicker(suggestedFileName: String, content: String, onResult: (Result<String>) -> Unit) {
+        val saver = AndroidPlatformContext.saveBackupFilePicker
+        if (saver != null) {
+            saver(suggestedFileName, content, onResult)
+        } else {
+            // Fallback: save to app external exports directory
+            val ctx = AndroidPlatformContext.appContext
+            if (ctx != null) {
+                val res = runCatching {
+                    val base = ctx.getExternalFilesDir("exports") ?: File(ctx.filesDir, "exports")
+                    base.mkdirs()
+                    val out = File(base, suggestedFileName)
+                    out.writeText(content, Charsets.UTF_8)
+                    out.absolutePath
+                }
+                onResult(res)
+            } else {
+                onResult(Result.failure(IllegalStateException("存储不可用")))
+            }
+        }
     }
 }

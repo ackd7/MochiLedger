@@ -1,14 +1,20 @@
 package com.mochiledger.shared
 
 import com.mochiledger.shared.model.AccountType
+import com.mochiledger.shared.model.AutoBackupConfig
+import com.mochiledger.shared.model.BackupServerConfigBundle
 import com.mochiledger.shared.model.DefaultLedgerSeed
 import com.mochiledger.shared.model.LedgerAccount
 import com.mochiledger.shared.model.LedgerSnapshot
 import com.mochiledger.shared.model.LedgerTransaction
 import com.mochiledger.shared.model.PaymentChannel
+import com.mochiledger.shared.model.SelfHostedSyncConfig
 import com.mochiledger.shared.model.TransactionType
+import com.mochiledger.shared.model.WebDavConfig
 import com.mochiledger.shared.parser.PaymentMessageParser
+import com.mochiledger.shared.sync.LedgerJson
 import com.mochiledger.shared.sync.LedgerMerger
+import kotlinx.serialization.encodeToString
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -176,5 +182,44 @@ class MochiLedgerCoreTest {
         assertEquals(3200L, parsed.amountCents)
         assertEquals("cat_food", parsed.suggestedCategoryId)
         assertEquals("acc_wechat", parsed.suggestedAccountId)
+    }
+
+    @Test
+    fun fullBackupSnapshotRoundTripsServerConfig() {
+        val bundle = BackupServerConfigBundle(
+            webDav = WebDavConfig(
+                enabled = true,
+                serverUrl = "https://dav.jianguoyun.com/dav/",
+                username = "tester@example.com",
+                password = "secret-app-password",
+                remoteDirectory = "MochiLedger",
+            ),
+            selfHosted = SelfHostedSyncConfig(
+                enabled = true,
+                serverUrl = "https://sync.ackd7.dpdns.org",
+                authToken = "qq0759",
+                ledgerId = "default",
+            ),
+            autoBackup = AutoBackupConfig(
+                dailyFirstOpenEnabled = true,
+                scheduledEnabled = true,
+                intervalHours = 6,
+                includeServerConfig = true,
+            ),
+        )
+        val snapshot = LedgerSnapshot(
+            exportedAt = now,
+            accounts = accounts,
+            serverConfig = bundle,
+        )
+        val json = LedgerJson.codec.encodeToString(snapshot)
+        val decoded = LedgerJson.codec.decodeFromString<LedgerSnapshot>(json)
+
+        assertNotNull(decoded.serverConfig)
+        assertEquals("https://sync.ackd7.dpdns.org", decoded.serverConfig?.selfHosted?.serverUrl)
+        assertEquals("qq0759", decoded.serverConfig?.selfHosted?.authToken)
+        assertEquals("tester@example.com", decoded.serverConfig?.webDav?.username)
+        assertTrue(decoded.serverConfig?.autoBackup?.dailyFirstOpenEnabled == true)
+        assertEquals(6, decoded.serverConfig?.autoBackup?.intervalHours)
     }
 }

@@ -89,6 +89,27 @@ fun MochiLedgerApp(
         }
     }
 
+    // Daily first-open automatic backup (includes ledger records + sync server config)
+    LaunchedEffect(Unit) {
+        val dailyRes = repository.checkAndRunDailyFirstOpenBackup()
+        if (dailyRes != null && dailyRes.success) {
+            showMessage(dailyRes.message)
+        }
+    }
+
+    // Periodic scheduled backup loop
+    val autoBackup = state.metadata.autoBackup
+    LaunchedEffect(autoBackup.scheduledEnabled, autoBackup.intervalHours) {
+        if (!autoBackup.scheduledEnabled) return@LaunchedEffect
+        while (true) {
+            val res = repository.checkAndRunScheduledBackup()
+            if (res != null && res.success) {
+                showMessage(res.message)
+            }
+            delay(60_000L)
+        }
+    }
+
     MochiLedgerTheme(appearance = state.metadata.appearance) {
         val windowShape = mochiShape(windowCornerRadius)
         val rootModifier = if (windowCornerRadius > 0.dp) {

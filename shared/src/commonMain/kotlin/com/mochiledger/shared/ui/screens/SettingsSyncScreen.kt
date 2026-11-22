@@ -35,8 +35,10 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mochiledger.shared.data.LedgerUiState
+import com.mochiledger.shared.model.AutoBackupConfig
 import com.mochiledger.shared.model.SelfHostedSyncConfig
 import com.mochiledger.shared.model.WebDavConfig
+import com.mochiledger.shared.model.formatFileSize
 import com.mochiledger.shared.platform.PlatformBackHandler
 import com.mochiledger.shared.ui.components.FlatIcon
 import com.mochiledger.shared.ui.components.MochiChip
@@ -62,7 +64,7 @@ private enum class SyncSubPage(val title: String) {
     HUB("同步与备份"),
     WEBDAV("WebDAV 云同步"),
     SELF_HOSTED("自建同步服务器"),
-    LOCAL("本地文件备份"),
+    LOCAL("备份与恢复"),
 }
 
 @OptIn(ExperimentalLayoutApi::class)
@@ -78,15 +80,22 @@ fun SettingsSyncScreen(
     onTestSelfHosted: () -> Unit,
     onSyncSelfHosted: () -> Unit,
     onSyncAllEnabled: () -> Unit,
-    onExportJson: () -> Unit,
+    onUpdateAutoBackup: (AutoBackupConfig) -> Unit,
+    onManualBackupNow: () -> Unit,
+    onExportBackupWithPicker: () -> Unit,
+    onPickImportBackupFile: (Boolean) -> Unit,
+    onRestoreLocalBackup: (String, Boolean) -> Unit,
+    onDeleteLocalBackup: (String) -> Unit,
     onExportCsv: () -> Unit,
-    onImportJson: (String) -> Unit,
+    onImportJson: (String, Boolean) -> Unit,
     bottomInset: Dp = 0.dp,
 ) {
     var subPage by remember { mutableStateOf(SyncSubPage.HUB) }
     val webDav = state.metadata.webDav
     val selfHosted = state.metadata.selfHosted
+    val autoBackup = state.metadata.autoBackup
     var importJsonText by remember { mutableStateOf("") }
+    var restoreServerConfigOnImport by remember { mutableStateOf(true) }
 
     fun handleBack() {
         if (subPage != SyncSubPage.HUB) {
@@ -224,9 +233,16 @@ fun SettingsSyncScreen(
                                         onClick = { subPage = SyncSubPage.SELF_HOSTED },
                                     )
                                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                                    val backupSummary = buildList {
+                                        if (autoBackup.dailyFirstOpenEnabled) add("每日首开备份")
+                                        if (autoBackup.scheduledEnabled) add("每${autoBackup.intervalHours}h定时")
+                                    }.let { tags ->
+                                        val prefix = if (tags.isEmpty()) "手动备份" else tags.joinToString(" · ")
+                                        "$prefix · 已有 ${state.localBackups.size} 份本地备份（含服务器配置）"
+                                    }
                                     ArrowPreference(
-                                        title = "本地文件备份与导入",
-                                        summary = "统一 SQLite / .mochi.json / CSV 导出与合并导入",
+                                        title = "定时备份、手动备份与导入恢复",
+                                        summary = backupSummary,
                                         onClick = { subPage = SyncSubPage.LOCAL },
                                     )
                                 }
@@ -380,43 +396,200 @@ fun SettingsSyncScreen(
                     }
 
                     SyncSubPage.LOCAL -> {
-                        item(key = "local_detail") {
+                        item(key = "auto_backup_card") {
+                            SmallTitle(text = "自动备份策略")
                             Card(modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    SwitchPreference(
+                                        title = "每天首次打开软件自动备份",
+                                        summary = "每天第一次启动墨记时，自动保存全量本地备份",
+                                        checked = autoBackup.dailyFirstOpenEnabled,
+                                        onCheckedChange = { onUpdateAutoBackup(autoBackup.copy(dailyFirstOpenEnabled = it)) },
+                                    )
+                                    HorizontalDivider()
+                                    SwitchPreference(
+                                        title = "定时自动备份",
+                                        summary = "软件运行期间按设定周期自动备份，防止数据丢失",
+                                        checked = autoBackup.scheduledEnabled,
+                                        onCheckedChange = { onUpdateAutoBackup(autoBackup.copy(scheduledEnabled = it)) },
+                                    )
+                                    if (autoBackup.scheduledEnabled) {
+                                        Text(
+                                            text = "定时备份间隔",
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                        FlowRow(
+                                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                                        ) {
+                                            listOf(1, 3, 6, 12, 24).forEach { hours ->
+                                                MochiChip(
+                                                    label = if (hours == 24) "每天" else "每 $hours 小时",
+                                                    selected = autoBackup.intervalHours == hours,
+                                                ) {
+                                                    onUpdateAutoBackup(autoBackup.copy(intervalHours = hours))
+                                                }
+                                            }
+                                        }
+                                    }
+                                    HorizontalDivider()
+                                    SwitchPreference(
+                                        title = "备份包含同步服务器信息",
+                                        summary = "同时备份 WebDAV、自建服地址与 Token、自动记账与备份配置",
+                                        checked = autoBackup.includeServerConfig,
+                                        onCheckedChange = { onUpdateAutoBackup(autoBackup.copy(includeServerConfig = it)) },
+                                    )
+                                    HorizontalDivider()
+                                    SwitchPreference(
+                                        title = "自动备份时联动云端同步",
+                                        summary = "触发自动备份后同时同步至已开启的 WebDAV / 自建服务器",
+                                        checked = autoBackup.alsoSyncRemote,
+                                        onCheckedChange = { onUpdateAutoBackup(autoBackup.copy(alsoSyncRemote = it)) },
+                                    )
                                     Text(
-                                        text = "本地 SQLite 数据库路径：\n${state.databasePath}",
+                                        text = "上次自动备份：${if (autoBackup.lastAutoBackupAt > 0L) formatTimestamp(autoBackup.lastAutoBackupAt) else "尚未执行"}" +
+                                            if (autoBackup.lastDailyBackupDate.isNotBlank()) " · 今日首开：${autoBackup.lastDailyBackupDate}" else "",
                                         fontSize = 12.sp,
                                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                     )
-                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
-                                        TextButton(
-                                            text = "导出 .mochi.json",
-                                            onClick = onExportJson,
-                                            modifier = Modifier.weight(1f),
-                                        )
-                                        TextButton(
-                                            text = "导出 CSV 表格",
-                                            onClick = onExportCsv,
-                                            modifier = Modifier.weight(1f),
-                                        )
-                                    }
-                                    TextField(
-                                        value = importJsonText,
-                                        onValueChange = { importJsonText = it },
-                                        label = "粘贴 .mochi.json 内容以去重合并导入...",
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
+                                }
+                            }
+                        }
+
+                        item(key = "manual_backup_card") {
+                            SmallTitle(text = "手动备份与导入")
+                            Card(modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     TextButton(
-                                        text = "去重合并导入 JSON 快照",
-                                        onClick = {
-                                            if (importJsonText.isNotBlank()) {
-                                                onImportJson(importJsonText)
-                                                importJsonText = ""
-                                            }
-                                        },
+                                        text = "立即手动备份（含账单与服务器配置）",
+                                        onClick = onManualBackupNow,
                                         colors = ButtonDefaults.textButtonColorsPrimary(),
                                         modifier = Modifier.fillMaxWidth(),
                                     )
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                                        TextButton(
+                                            text = "另存为 .mochi.json",
+                                            onClick = onExportBackupWithPicker,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        TextButton(
+                                            text = "选择文件导入备份",
+                                            onClick = { onPickImportBackupFile(restoreServerConfigOnImport) },
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+                                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                                        TextButton(
+                                            text = "导出 CSV 账单表格",
+                                            onClick = onExportCsv,
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                    }
+                                    HorizontalDivider()
+                                    SwitchPreference(
+                                        title = "导入时一并恢复服务器配置",
+                                        summary = "恢复备份文件内记录的 WebDAV、自建服及自动备份设置",
+                                        checked = restoreServerConfigOnImport,
+                                        onCheckedChange = { restoreServerConfigOnImport = it },
+                                    )
+                                    TextField(
+                                        value = importJsonText,
+                                        onValueChange = { importJsonText = it },
+                                        label = "或粘贴 .mochi.json 文本内容导入...",
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
+                                    if (importJsonText.isNotBlank()) {
+                                        TextButton(
+                                            text = "从粘贴文本去重合并导入",
+                                            onClick = {
+                                                onImportJson(importJsonText, restoreServerConfigOnImport)
+                                                importJsonText = ""
+                                            },
+                                            colors = ButtonDefaults.textButtonColorsPrimary(),
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        item(key = "local_history_card") {
+                            SmallTitle(text = "本地备份历史（共 ${state.localBackups.size} 份）")
+                            Card(modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Text(
+                                        text = "备份目录：${state.backupDirectoryPath}\n数据库：${state.databasePath}",
+                                        fontSize = 11.sp,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    )
+                                    if (state.localBackups.isEmpty()) {
+                                        Text(
+                                            text = "暂无本地备份文件，点击上方「立即手动备份」即可创建第一份完整备份。",
+                                            fontSize = 13.sp,
+                                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                        )
+                                    } else {
+                                        state.localBackups.forEachIndexed { idx, file ->
+                                            if (idx > 0) HorizontalDivider()
+                                            val triggerLabel = when (file.triggerType) {
+                                                "daily" -> "每日首开"
+                                                "scheduled" -> "定时备份"
+                                                else -> "手动备份"
+                                            }
+                                            val triggerColor = when (file.triggerType) {
+                                                "daily" -> MochiColors.Income
+                                                "scheduled" -> MiuixTheme.colorScheme.primary
+                                                else -> Color(0xFFE88B00)
+                                            }
+                                            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                                Row(
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                                    verticalAlignment = Alignment.CenterVertically,
+                                                ) {
+                                                    Row(
+                                                        verticalAlignment = Alignment.CenterVertically,
+                                                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                                        modifier = Modifier.weight(1f),
+                                                    ) {
+                                                        MochiGlassBadge(triggerLabel, triggerColor)
+                                                        Text(
+                                                            text = formatFileSize(file.sizeBytes),
+                                                            fontSize = 12.sp,
+                                                            fontWeight = FontWeight.SemiBold,
+                                                        )
+                                                    }
+                                                    Text(
+                                                        text = formatTimestamp(file.lastModifiedMs),
+                                                        fontSize = 11.sp,
+                                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                                    )
+                                                }
+                                                Text(
+                                                    text = file.fileName,
+                                                    fontSize = 12.sp,
+                                                    color = MiuixTheme.colorScheme.onSurface,
+                                                )
+                                                Row(
+                                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                    modifier = Modifier.fillMaxWidth(),
+                                                ) {
+                                                    TextButton(
+                                                        text = "导入恢复",
+                                                        onClick = { onRestoreLocalBackup(file.absolutePath, restoreServerConfigOnImport) },
+                                                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                                                        modifier = Modifier.weight(1f),
+                                                    )
+                                                    TextButton(
+                                                        text = "删除",
+                                                        onClick = { onDeleteLocalBackup(file.absolutePath) },
+                                                        modifier = Modifier.weight(0.6f),
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         }

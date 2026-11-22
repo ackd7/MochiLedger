@@ -116,15 +116,51 @@ fun AppSettingsScreen(
                     onTestSelfHosted = { scope.launch { onShowMessage(repository.testSelfHosted().message) } },
                     onSyncSelfHosted = { scope.launch { onShowMessage(repository.syncWithSelfHosted().message) } },
                     onSyncAllEnabled = { scope.launch { onShowMessage(repository.syncAllEnabledSources().message) } },
-                    onExportJson = {
-                        val res = repository.exportJsonBackup()
-                        onShowMessage(res.fold({ "已导出至：$it" }, { "导出失败：${it.message}" }))
+                    onUpdateAutoBackup = repository::updateAutoBackupConfig,
+                    onManualBackupNow = {
+                        scope.launch {
+                            val res = repository.performManualBackup(alsoSyncRemote = state.metadata.autoBackup.alsoSyncRemote)
+                            onShowMessage(res.message)
+                        }
+                    },
+                    onExportBackupWithPicker = {
+                        val json = repository.createFullBackupJson()
+                        val fileName = "MochiLedger-backup-${PlatformBridge.currentTimeMillis()}.mochi.json"
+                        PlatformBridge.saveFileWithPicker(fileName, json) { res ->
+                            scope.launch {
+                                onShowMessage(res.fold({ "已导出备份至：$it" }, { "导出提示：${it.message}" }))
+                            }
+                        }
+                    },
+                    onPickImportBackupFile = { restoreServerConfig ->
+                        PlatformBridge.pickBackupFileContent { res ->
+                            scope.launch {
+                                res.fold(
+                                    onSuccess = { (name, content) ->
+                                        val imported = repository.importJsonSnapshot(content, restoreServerConfig)
+                                        onShowMessage("[$name] ${imported.message}")
+                                    },
+                                    onFailure = { e ->
+                                        onShowMessage("导入提示：${e.message}")
+                                    },
+                                )
+                            }
+                        }
+                    },
+                    onRestoreLocalBackup = { path, restoreServerConfig ->
+                        onShowMessage(repository.importBackupFromFile(path, restoreServerConfig).message)
+                    },
+                    onDeleteLocalBackup = { path ->
+                        val ok = repository.deleteLocalBackup(path)
+                        onShowMessage(if (ok) "已删除该备份文件" else "删除备份文件失败")
                     },
                     onExportCsv = {
                         val res = repository.exportCsvBackup()
                         onShowMessage(res.fold({ "已导出 CSV 至：$it" }, { "导出失败：${it.message}" }))
                     },
-                    onImportJson = { json -> onShowMessage(repository.importJsonSnapshot(json).message) },
+                    onImportJson = { json, restoreServerConfig ->
+                        onShowMessage(repository.importJsonSnapshot(json, restoreServerConfig).message)
+                    },
                     bottomInset = bottomInset,
                 )
             }

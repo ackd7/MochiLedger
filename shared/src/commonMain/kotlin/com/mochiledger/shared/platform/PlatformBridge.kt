@@ -1,6 +1,7 @@
 package com.mochiledger.shared.platform
 
 import com.mochiledger.shared.model.LedgerSnapshot
+import com.mochiledger.shared.model.LocalBackupFileInfo
 import com.mochiledger.shared.model.SyncMetadata
 
 data class HttpResponseData(
@@ -21,11 +22,16 @@ data class AutoTrackRuntimeStatus(
 
 interface LedgerDatabaseDriver {
     val databasePath: String
+    val backupDirectoryPath: String
     fun loadSnapshot(): LedgerSnapshot?
     fun saveSnapshot(snapshot: LedgerSnapshot)
     fun loadSyncMetadata(): SyncMetadata
     fun saveSyncMetadata(metadata: SyncMetadata)
     fun exportTextFile(suggestedFileName: String, content: String): Result<String>
+    fun saveLocalBackup(fileName: String, content: String, maxKeep: Int = 30): Result<LocalBackupFileInfo>
+    fun listLocalBackups(): List<LocalBackupFileInfo>
+    fun readTextFile(absolutePath: String): Result<String>
+    fun deleteLocalBackup(absolutePath: String): Boolean
 }
 
 expect object PlatformBridge {
@@ -44,4 +50,6 @@ expect object PlatformBridge {
     fun openNotificationListenerSettings(): Boolean
     fun openUrl(url: String): Boolean
     fun defaultDeviceId(): String
+    fun pickBackupFileContent(onResult: (Result<Pair<String, String>>) -> Unit)
+    fun saveFileWithPicker(suggestedFileName: String, content: String, onResult: (Result<String>) -> Unit)
 }

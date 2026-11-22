@@ -140,20 +140,52 @@ data class AppAppearanceConfig(
 )
 
 @Serializable
+data class AutoBackupConfig(
+    val dailyFirstOpenEnabled: Boolean = true,
+    val scheduledEnabled: Boolean = false,
+    val intervalHours: Int = 6, // 1, 3, 6, 12, 24
+    val alsoSyncRemote: Boolean = true,
+    val includeServerConfig: Boolean = true,
+    val maxLocalBackups: Int = 30,
+    val lastAutoBackupAt: Long = 0L,
+    val lastDailyBackupDate: String = "", // YYYY-MM-DD
+)
+
+@Serializable
+data class BackupServerConfigBundle(
+    val webDav: WebDavConfig = WebDavConfig(),
+    val selfHosted: SelfHostedSyncConfig = SelfHostedSyncConfig(),
+    val autoTrack: AutoTrackSettings = AutoTrackSettings(),
+    val autoBackup: AutoBackupConfig = AutoBackupConfig(),
+    val appearance: AppAppearanceConfig? = null,
+)
+
+data class LocalBackupFileInfo(
+    val fileName: String,
+    val absolutePath: String,
+    val sizeBytes: Long,
+    val lastModifiedMs: Long,
+    val triggerType: String = "manual", // manual, daily, scheduled
+)
+
+@Serializable
 data class SyncMetadata(
     val deviceId: String = "",
     val webDav: WebDavConfig = WebDavConfig(),
     val selfHosted: SelfHostedSyncConfig = SelfHostedSyncConfig(),
     val autoTrack: AutoTrackSettings = AutoTrackSettings(),
     val appearance: AppAppearanceConfig = AppAppearanceConfig(),
+    val autoBackup: AutoBackupConfig = AutoBackupConfig(),
 )
 
 /**
  * Interoperable snapshot exchanged identically between Windows, Android, WebDAV, and Self-Hosted Sync Server.
+ * When exported/saved as a full backup, [serverConfig] also preserves WebDAV, Self-Hosted Sync Server,
+ * AutoTrack, and AutoBackup configurations for one-click cross-device restoration.
  */
 @Serializable
 data class LedgerSnapshot(
-    val schemaVersion: Int = 1,
+    val schemaVersion: Int = 2,
     val exportedAt: Long,
     val sourceDeviceId: String = "",
     val accounts: List<LedgerAccount> = emptyList(),
@@ -161,6 +193,7 @@ data class LedgerSnapshot(
     val transactions: List<LedgerTransaction> = emptyList(),
     val budgets: List<LedgerBudget> = emptyList(),
     val rules: List<AutoTrackRule> = emptyList(),
+    val serverConfig: BackupServerConfigBundle? = null,
 )
 
 @Serializable
@@ -208,7 +241,7 @@ data class ChangelogEntry(
 )
 
 object AppInfo {
-    const val VERSION_NAME = "1.0.9"
+    const val VERSION_NAME = "1.1.0"
     const val GITHUB_OWNER = "ackd7"
     const val GITHUB_REPO = "MochiLedger"
     const val GITHUB_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO"
@@ -216,6 +249,16 @@ object AppInfo {
     const val RELEASES_LATEST_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
 
     val CHANGELOG: List<ChangelogEntry> = listOf(
+        ChangelogEntry(
+            version = "v1.1.0",
+            title = "全新应用图标 · 定时自动备份 · 每日首开备份 · 全量含服务器配置备份恢复",
+            changes = listOf(
+                "全新重绘「墨记」应用图标（深靛紫渐变 + 磨砂层叠账本 + 琥珀金币），Android 自适应图标与 Windows EXE/任务栏全面焕新",
+                "新增「每天首次打开软件自动备份」与「定时自动备份」（支持 1 / 3 / 6 / 12 / 24 小时间隔，可联动远端同步并自动清理旧份）",
+                "全面升级手动备份与导入备份：支持一键本地备份、本地历史备份列表查看大小/一键恢复/删除，以及系统文件选择器导入导出 .mochi.json",
+                "全量备份支持同时打包同步服务器信息（WebDAV / 自建服务器地址与 Token / 自动记账与自动备份设置），换机重装一键无缝还原",
+            ),
+        ),
         ChangelogEntry(
             version = "v1.0.9",
             title = "Windows 圆角窗口 · 电脑与手机端统一底部悬浮导航",
@@ -366,4 +409,16 @@ fun parseAmountToCents(raw: String): Long? {
     val value = cleaned.toDoubleOrNull() ?: return null
     if (value < 0) return null
     return kotlin.math.round(value * 100.0).toLong()
+}
+
+fun formatFileSize(bytes: Long): String {
+    if (bytes < 1024L) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024.0) {
+        val rounded = kotlin.math.round(kb * 10.0) / 10.0
+        return "$rounded KB"
+    }
+    val mb = kb / 1024.0
+    val rounded = kotlin.math.round(mb * 100.0) / 100.0
+    return "$rounded MB"
 }

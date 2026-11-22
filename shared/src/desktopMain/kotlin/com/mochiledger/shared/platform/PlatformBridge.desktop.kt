@@ -1,6 +1,7 @@
 package com.mochiledger.shared.platform
 
 import com.mochiledger.shared.model.LedgerSnapshot
+import com.mochiledger.shared.model.LocalBackupFileInfo
 import com.mochiledger.shared.model.SyncMetadata
 import com.mochiledger.shared.sync.LedgerJson
 import kotlinx.serialization.encodeToString
@@ -13,6 +14,7 @@ import java.util.UUID
 
 private class DesktopSqliteDriver(private val dbFile: File) : LedgerDatabaseDriver {
     override val databasePath: String get() = dbFile.absolutePath
+    override val backupDirectoryPath: String get() = File(dbFile.parentFile, "backups").apply { mkdirs() }.absolutePath
 
     init {
         dbFile.parentFile?.mkdirs()
@@ -203,6 +205,62 @@ private class DesktopSqliteDriver(private val dbFile: File) : LedgerDatabaseDriv
             outFile.absolutePath
         }
     }
+
+    override fun saveLocalBackup(fileName: String, content: String, maxKeep: Int): Result<LocalBackupFileInfo> {
+        return runCatching {
+            val dir = File(backupDirectoryPath).apply { mkdirs() }
+            val outFile = File(dir, fileName)
+            outFile.writeText(content, Charsets.UTF_8)
+            // Prune oldest auto backups if exceeding maxKeep (keep manual backups untouched unless > 2*maxKeep)
+            if (maxKeep > 0) {
+                val allFiles = dir.listFiles { f -> f.isFile && f.name.endsWith(".json") }
+                    ?.sortedByDescending { it.lastModified() }
+                    .orEmpty()
+                val autoFiles = allFiles.filter { it.name.contains("-daily-") || it.name.contains("-scheduled-") }
+                if (autoFiles.size > maxKeep) {
+                    autoFiles.drop(maxKeep).forEach { runCatching { it.delete() } }
+                }
+            }
+            LocalBackupFileInfo(
+                fileName = outFile.name,
+                absolutePath = outFile.absolutePath,
+                sizeBytes = outFile.length(),
+                lastModifiedMs = outFile.lastModified(),
+                triggerType = detectBackupTrigger(outFile.name),
+            )
+        }
+    }
+
+    override fun listLocalBackups(): List<LocalBackupFileInfo> {
+        val dir = File(backupDirectoryPath)
+        if (!dir.exists()) return emptyList()
+        return dir.listFiles { f -> f.isFile && f.name.endsWith(".json") }
+            ?.sortedByDescending { it.lastModified() }
+            ?.map { f ->
+                LocalBackupFileInfo(
+                    fileName = f.name,
+                    absolutePath = f.absolutePath,
+                    sizeBytes = f.length(),
+                    lastModifiedMs = f.lastModified(),
+                    triggerType = detectBackupTrigger(f.name),
+                )
+            }
+            .orEmpty()
+    }
+
+    override fun readTextFile(absolutePath: String): Result<String> {
+        return runCatching { File(absolutePath).readText(Charsets.UTF_8) }
+    }
+
+    override fun deleteLocalBackup(absolutePath: String): Boolean {
+        return runCatching { File(absolutePath).delete() }.getOrDefault(false)
+    }
+
+    private fun detectBackupTrigger(name: String): String = when {
+        name.contains("-daily-") -> "daily"
+        name.contains("-scheduled-") -> "scheduled"
+        else -> "manual"
+    }
 }
 
 actual object PlatformBridge {
@@ -280,5 +338,44 @@ actual object PlatformBridge {
     actual fun defaultDeviceId(): String {
         val host = runCatching { java.net.InetAddress.getLocalHost().hostName }.getOrDefault("desktop")
         return "win-$host-${UUID.randomUUID().toString().take(6)}"
+    }
+
+    actual fun pickBackupFileContent(onResult: (Result<Pair<String, String>>) -> Unit) {
+        Thread {
+            val res = runCatching {
+                val dialog = java.awt.FileDialog(null as java.awt.Frame?, "选择墨记备份文件 (.mochi.json)", java.awt.FileDialog.LOAD)
+                dialog.file = "*.json"
+                dialog.isVisible = true
+                val dir = dialog.directory
+                val file = dialog.file
+                dialog.dispose()
+                if (dir == null || file == null) {
+                    throw IllegalStateException("已取消选择文件")
+                }
+                val selected = File(dir, file)
+                selected.name to selected.readText(Charsets.UTF_8)
+            }
+            onResult(res)
+        }.start()
+    }
+
+    actual fun saveFileWithPicker(suggestedFileName: String, content: String, onResult: (Result<String>) -> Unit) {
+        Thread {
+            val res = runCatching {
+                val dialog = java.awt.FileDialog(null as java.awt.Frame?, "导出墨记全量备份文件", java.awt.FileDialog.SAVE)
+                dialog.file = suggestedFileName
+                dialog.isVisible = true
+                val dir = dialog.directory
+                val file = dialog.file
+                dialog.dispose()
+                if (dir == null || file == null) {
+                    throw IllegalStateException("已取消导出")
+                }
+                val outFile = File(dir, file)
+                outFile.writeText(content, Charsets.UTF_8)
+                outFile.absolutePath
+            }
+            onResult(res)
+        }.start()
     }
 }
