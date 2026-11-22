@@ -131,6 +131,10 @@ fun resolveAccountVisual(name: String, type: AccountType, fallbackColorHex: Long
             "wechat" to Color(0xFF07C160)
         lower.contains("支付宝") || lower.contains("alipay") || lower.contains("花呗") || lower.contains("余额宝") ->
             "alipay" to Color(0xFF1677FF)
+        lower.contains("apple") ->
+            "applepay" to Color(0xFF5A6275)
+        lower.contains("visa") ->
+            "visa" to Color(0xFF1A1F71)
         lower.contains("银行") || lower.contains("储蓄") || lower.contains("招行") || lower.contains("工行") ||
             lower.contains("建行") || lower.contains("农行") || lower.contains("中行") || lower.contains("交行") ||
             lower.contains("邮储") || type == AccountType.BANK_CARD ->
