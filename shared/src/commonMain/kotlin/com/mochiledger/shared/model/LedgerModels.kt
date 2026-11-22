@@ -208,7 +208,7 @@ data class ChangelogEntry(
 )
 
 object AppInfo {
-    const val VERSION_NAME = "1.0.4"
+    const val VERSION_NAME = "1.0.5"
     const val GITHUB_OWNER = "ackd7"
     const val GITHUB_REPO = "MochiLedger"
     const val GITHUB_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO"
@@ -216,6 +216,17 @@ object AppInfo {
     const val RELEASES_LATEST_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
 
     val CHANGELOG: List<ChangelogEntry> = listOf(
+        ChangelogEntry(
+            version = "v1.0.5",
+            title = "Android 应用图标 · 页面切换动效 · 系统返回手势 · 极简返回按钮",
+            changes = listOf(
+                "为 Android 端新增自适应矢量应用图标（支持 Android 13+ 单色主题图标）",
+                "电脑端与手机端全面新增平滑的页面切换与二级/三级页面推进弹出动画",
+                "修复手机端在二级/三级页面触发系统返回手势直接退出到桌面的问题，现可逐级顺滑返回",
+                "将「更新日志」收纳至「当前版本」页面内的三级子页面中",
+                "统一二级/三级页面返回按钮为纯图标样式，并消除多层返回栏重叠",
+            ),
+        ),
         ChangelogEntry(
             version = "v1.0.4",
             title = "无边框窗口 · 扁平矢量图标 · 快捷日期选择 · 更新日志",

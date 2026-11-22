@@ -1,8 +1,13 @@
 package com.mochiledger.shared.ui
 
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,6 +41,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.mochiledger.shared.data.LedgerRepository
+import com.mochiledger.shared.platform.PlatformBackHandler
 import com.mochiledger.shared.platform.PlatformBridge
 import com.mochiledger.shared.ui.components.FlatIcon
 import com.mochiledger.shared.ui.screens.AccountsScreen
@@ -67,6 +73,10 @@ fun MochiLedgerApp(
 
     var currentTab by remember { mutableStateOf(MochiTab.TRANSACTIONS) }
     var toastMessage by remember { mutableStateOf<String?>(null) }
+
+    PlatformBackHandler(enabled = currentTab != MochiTab.TRANSACTIONS) {
+        currentTab = MochiTab.TRANSACTIONS
+    }
 
     fun showMessage(msg: String) {
         toastMessage = msg
@@ -258,31 +268,43 @@ private fun MochiMainContent(
     onShowMessage: (String) -> Unit,
     bottomInset: Dp,
 ) {
-    when (tab) {
-        MochiTab.TRANSACTIONS -> TransactionsScreen(
-            state = state,
-            onSaveTransaction = repository::upsertTransaction,
-            onDeleteTransaction = repository::deleteTransaction,
-            onShowMessage = onShowMessage,
-            bottomInset = bottomInset,
-        )
-        MochiTab.ANALYTICS -> AnalyticsScreen(
-            state = state,
-            bottomInset = bottomInset,
-        )
-        MochiTab.ACCOUNTS -> AccountsScreen(
-            state = state,
-            onSaveAccount = repository::upsertAccount,
-            onDeleteAccount = repository::deleteAccount,
-            onShowMessage = onShowMessage,
-            bottomInset = bottomInset,
-        )
-        MochiTab.SETTINGS -> AppSettingsScreen(
-            state = state,
-            repository = repository,
-            supportsLsposed = supportsLsposed,
-            onShowMessage = onShowMessage,
-            bottomInset = bottomInset,
-        )
+    AnimatedContent(
+        targetState = tab,
+        modifier = Modifier.fillMaxSize(),
+        transitionSpec = {
+            val forward = targetState.ordinal >= initialState.ordinal
+            val offset = if (forward) 1 else -1
+            (slideInHorizontally(tween(240)) { it / 8 * offset } + fadeIn(tween(220))) togetherWith
+                (slideOutHorizontally(tween(180)) { -it / 10 * offset } + fadeOut(tween(160)))
+        },
+        label = "mainTabTransition",
+    ) { targetTab ->
+        when (targetTab) {
+            MochiTab.TRANSACTIONS -> TransactionsScreen(
+                state = state,
+                onSaveTransaction = repository::upsertTransaction,
+                onDeleteTransaction = repository::deleteTransaction,
+                onShowMessage = onShowMessage,
+                bottomInset = bottomInset,
+            )
+            MochiTab.ANALYTICS -> AnalyticsScreen(
+                state = state,
+                bottomInset = bottomInset,
+            )
+            MochiTab.ACCOUNTS -> AccountsScreen(
+                state = state,
+                onSaveAccount = repository::upsertAccount,
+                onDeleteAccount = repository::deleteAccount,
+                onShowMessage = onShowMessage,
+                bottomInset = bottomInset,
+            )
+            MochiTab.SETTINGS -> AppSettingsScreen(
+                state = state,
+                repository = repository,
+                supportsLsposed = supportsLsposed,
+                onShowMessage = onShowMessage,
+                bottomInset = bottomInset,
+            )
+        }
     }
 }

@@ -124,6 +124,16 @@ fun FlatIcon(
                 drawLine(tint, Offset(w * 0.20f, h * 0.50f), Offset(w * 0.80f, h * 0.50f), stroke.width * 1.15f, StrokeCap.Round)
             }
 
+            "back" -> {
+                // Clean flat left chevron back arrow
+                val p = Path().apply {
+                    moveTo(w * 0.62f, h * 0.22f)
+                    lineTo(w * 0.34f, h * 0.50f)
+                    lineTo(w * 0.62f, h * 0.78f)
+                }
+                drawPath(p, color = tint, style = stroke)
+            }
+
             "minimize" -> {
                 drawLine(tint, Offset(w * 0.22f, h * 0.52f), Offset(w * 0.78f, h * 0.52f), stroke.width, StrokeCap.Round)
             }
