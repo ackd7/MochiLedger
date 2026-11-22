@@ -129,6 +129,8 @@ data class AutoTrackSettings(
     val fallbackNotificationListener: Boolean = true,
     val autoConfirm: Boolean = true,
     val dedupeWindowSeconds: Int = 15,
+    val floatingConfirmEnabled: Boolean = true,
+    val floatingConfirmSeconds: Int = 6,
 )
 
 @Serializable
@@ -241,7 +243,7 @@ data class ChangelogEntry(
 )
 
 object AppInfo {
-    const val VERSION_NAME = "1.1.0"
+    const val VERSION_NAME = "1.2.0"
     const val GITHUB_OWNER = "ackd7"
     const val GITHUB_REPO = "MochiLedger"
     const val GITHUB_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO"
@@ -249,6 +251,16 @@ object AppInfo {
     const val RELEASES_LATEST_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
 
     val CHANGELOG: List<ChangelogEntry> = listOf(
+        ChangelogEntry(
+            version = "v1.2.0",
+            title = "LSPosed 商品明细抓取 · 付款后轻量悬浮确认条 · 微信/支付宝账单补全 · 权限体检",
+            changes = listOf(
+                "升级 LSPosed 支付页深度解析：自动从支付成功页与账单详情页提取商户全称、商品说明与付款方式并写入备注",
+                "新增「付款后轻量悬浮确认条」（免 Root 可用）：自动记账后顶部弹出 6 秒倒计时小卡片，支持 1 秒点击快捷场景标签（早餐/午饭/买菜/超市等）或补充备注，解决路边摊扫码无明细痛点",
+                "新增「微信 / 支付宝官方账单 CSV 智能导入与补全」：全端支持自动识别 UTF-8 / GBK 编码账单，按时间+金额智能匹配本地已有账单补全商品明细（不重复入账）并导入漏记账单",
+                "新增「自动记账权限健康体检」面板：实时检查 LSPosed、通知使用权、悬浮窗、后台电池优化白名单与通知提醒 5 项权限，缺项一键直达系统设置，防止自动记账失效",
+            ),
+        ),
         ChangelogEntry(
             version = "v1.1.0",
             title = "全新应用图标 · 定时自动备份 · 每日首开备份 · 全量含服务器配置备份恢复",

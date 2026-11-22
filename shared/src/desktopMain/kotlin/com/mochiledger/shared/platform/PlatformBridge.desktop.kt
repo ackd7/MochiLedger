@@ -324,6 +324,12 @@ actual object PlatformBridge {
 
     actual fun openNotificationListenerSettings(): Boolean = false
 
+    actual fun openOverlayPermissionSettings(): Boolean = false
+
+    actual fun openBatteryOptimizationSettings(): Boolean = false
+
+    actual fun openAppNotificationSettings(): Boolean = false
+
     actual fun openUrl(url: String): Boolean {
         return runCatching {
             if (java.awt.Desktop.isDesktopSupported()) {
@@ -357,6 +363,38 @@ actual object PlatformBridge {
             }
             onResult(res)
         }.start()
+    }
+
+    actual fun pickStatementCsvContent(onResult: (Result<Pair<String, String>>) -> Unit) {
+        Thread {
+            val res = runCatching {
+                val dialog = java.awt.FileDialog(null as java.awt.Frame?, "选择微信或支付宝官方账单 (.csv)", java.awt.FileDialog.LOAD)
+                dialog.file = "*.csv"
+                dialog.isVisible = true
+                val dir = dialog.directory
+                val file = dialog.file
+                dialog.dispose()
+                if (dir == null || file == null) {
+                    throw IllegalStateException("已取消选择账单文件")
+                }
+                val selected = File(dir, file)
+                val bytes = selected.readBytes()
+                val text = decodeStatementBytes(bytes)
+                selected.name to text
+            }
+            onResult(res)
+        }.start()
+    }
+
+    private fun decodeStatementBytes(bytes: ByteArray): String {
+        val utf8 = bytes.toString(Charsets.UTF_8)
+        // Alipay official CSV exports are frequently GBK/GB18030 encoded; detect replacement char or missing headers
+        val looksLikeUtf8 = !utf8.contains('\uFFFD') &&
+            (utf8.contains("交易时间") || utf8.contains("交易对方") || utf8.contains("微信") || utf8.contains("支付宝"))
+        if (looksLikeUtf8) return utf8.removePrefix("\uFEFF")
+        return runCatching {
+            String(bytes, java.nio.charset.Charset.forName("GB18030")).removePrefix("\uFEFF")
+        }.getOrElse { utf8.removePrefix("\uFEFF") }
     }
 
     actual fun saveFileWithPicker(suggestedFileName: String, content: String, onResult: (Result<String>) -> Unit) {

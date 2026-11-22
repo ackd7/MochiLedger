@@ -27,11 +27,16 @@ object PaymentMessageParser {
         // 向星巴克付款32.00元 / 给张三转账
         Regex("""(?:向|给)\s*([^\s，,。：:；;（(]{1,24}?)\s*(?:付款|支付|转账|消费)"""),
         // 商户：瑞幸咖啡 / 收款方：美团外卖 / 对方：...
-        Regex("""(?:商户|商家|收款方|付款方|对方|交易对象)[：:\s]+([^\n，,。；;]{1,28})"""),
+        Regex("""(?:商户全称|商户|商家|收款方|付款方|对方|交易对象)[：:\s]+([^\n，,。；;]{1,28}?)(?:\s+(?:商品|付款方式|支付方式|支付成功|付款成功|收款成功|¥|￥)|$)"""),
         // 在美团外卖消费 / 在7-Eleven支付
         Regex("""在\s*([^\s，,。：:；;]{1,24}?)\s*(?:消费|付款|支付)"""),
         // 收到来自张三的转账 / 张三向你转账
         Regex("""([^\s，,。：:；;]{1,20}?)\s*(?:向你付款|向你转账|给你发了|发来)"""),
+    )
+
+    private val productPatterns = listOf(
+        // 商品：生椰拿铁 / 商品说明：美团外卖订单 / 商品名称：Type-C数据线
+        Regex("""(?:商品说明|商品名称|商品信息|商品|订单信息)[：:\s]+([^\n，,。；;]{1,40}?)(?:\s+(?:付款方式|支付方式|商户|支付成功|付款成功|¥|￥)|$)"""),
     )
 
     private val incomeKeywords = listOf(
@@ -69,8 +74,9 @@ object PaymentMessageParser {
 
         val txType = detectTransactionType(fullText) ?: return null
         val merchant = extractMerchant(title, content, channel, txType)
+        val productDetail = extractProductDetail(fullText)
         val suggestedAccountName = detectAccountName(fullText, channel)
-        val matchedRule = matchRule(fullText, merchant, channel, rules)
+        val matchedRule = matchRule("$fullText $productDetail", merchant, channel, rules)
 
         val resolvedAccountId = matchedRule?.targetAccountId
             ?: accounts.firstOrNull { !it.isDeleted && it.name.contains(suggestedAccountName, ignoreCase = true) }?.id
@@ -81,7 +87,7 @@ object PaymentMessageParser {
                 }
             }?.id
 
-        val resolvedCategoryId = matchedRule?.targetCategoryId ?: defaultCategoryFor(txType, fullText)
+        val resolvedCategoryId = matchedRule?.targetCategoryId ?: defaultCategoryFor(txType, "$fullText $productDetail")
 
         val effectiveSource = source ?: when (channel) {
             PaymentChannel.WECHAT -> RecordSource.WECHAT_LSPOSED
@@ -89,10 +95,18 @@ object PaymentMessageParser {
         }
 
         val cleanNote = buildString {
-            append(channel.label)
-            if (merchant.isNotBlank() && merchant != channel.label) {
-                append(" · ")
-                append(merchant)
+            if (productDetail.isNotBlank()) {
+                append(productDetail)
+                if (merchant.isNotBlank() && merchant != channel.label && !productDetail.contains(merchant)) {
+                    append(" · ")
+                    append(merchant)
+                }
+            } else {
+                append(channel.label)
+                if (merchant.isNotBlank() && merchant != channel.label) {
+                    append(" · ")
+                    append(merchant)
+                }
             }
         }
 
@@ -184,6 +198,17 @@ object PaymentMessageParser {
             combined.contains("花呗") -> "花呗消费"
             else -> channel.label
         }
+    }
+
+    private fun extractProductDetail(text: String): String {
+        for (pattern in productPatterns) {
+            val match = pattern.find(text)
+            val candidate = match?.groupValues?.getOrNull(1)?.trim()
+            if (!candidate.isNullOrBlank() && candidate.length >= 2) {
+                return candidate
+            }
+        }
+        return ""
     }
 
     private fun detectAccountName(text: String, channel: PaymentChannel): String {

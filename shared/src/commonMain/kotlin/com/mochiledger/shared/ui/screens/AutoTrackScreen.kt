@@ -5,6 +5,8 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -48,6 +50,7 @@ import top.yukonga.miuix.kmp.basic.TextField
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun AutoTrackScreen(
     state: LedgerUiState,
@@ -59,18 +62,29 @@ fun AutoTrackScreen(
     onShowMessage: (String) -> Unit,
     bottomInset: Dp = 0.dp,
 ) {
-    val runtime = remember { PlatformBridge.getAutoTrackRuntimeStatus() }
+    var runtime by remember { mutableStateOf(PlatformBridge.getAutoTrackRuntimeStatus()) }
     val settings = state.metadata.autoTrack
     val categoryMap = remember(state.categories) { state.categories.associateBy { it.id } }
 
     var simChannel by remember { mutableStateOf(PaymentChannel.WECHAT) }
     var simTitle by remember { mutableStateOf("微信支付") }
-    var simContent by remember { mutableStateOf("向瑞幸咖啡付款19.90元，已从零钱扣除") }
+    var simContent by remember { mutableStateOf("商户：瑞幸咖啡 商品：生椰拿铁大杯 付款方式：零钱 支付成功 ￥19.90") }
     var previewResult by remember { mutableStateOf<ParsedPayment?>(null) }
 
     var newRuleName by remember { mutableStateOf("") }
     var newRuleKeyword by remember { mutableStateOf("") }
     var newRuleCategoryId by remember { mutableStateOf("cat_food") }
+
+    val missingPermissionsCount = if (runtime.supportsLsposed) {
+        listOf(
+            runtime.lsposedActive || runtime.notificationListenerEnabled,
+            runtime.overlayPermissionGranted || !settings.floatingConfirmEnabled,
+            runtime.batteryOptimizationIgnored,
+            runtime.postNotificationsGranted,
+        ).count { !it }
+    } else {
+        0
+    }
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -126,9 +140,81 @@ fun AutoTrackScreen(
             }
         }
 
+        // Permission Health Check Panel (Android)
+        if (runtime.supportsLsposed) {
+            item(key = "permission_health") {
+                SmallTitle(
+                    text = if (missingPermissionsCount == 0) {
+                        "权限健康体检（全部就绪）"
+                    } else {
+                        "权限健康体检（缺少 $missingPermissionsCount 项，请及时开启防失效）"
+                    },
+                )
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp),
+                    ) {
+                        PermissionCheckRow(
+                            title = "LSPosed 深度抓取（方案 1）",
+                            desc = if (runtime.lsposedActive) "已激活，可自动抓取支付页商户与商品明细" else "未激活（可在 LSPosed 勾选微信/支付宝，或用下方通知监听替代）",
+                            granted = runtime.lsposedActive,
+                            optional = runtime.notificationListenerEnabled,
+                            actionLabel = null,
+                            onAction = {},
+                        )
+                        HorizontalDivider()
+                        PermissionCheckRow(
+                            title = "系统通知使用权（免 Root 监听）",
+                            desc = if (runtime.notificationListenerEnabled) "已授权，支持微信/支付宝通知自动记账" else "未授权，无 LSPosed 时必须开启此权限",
+                            granted = runtime.notificationListenerEnabled,
+                            optional = runtime.lsposedActive,
+                            actionLabel = "去开启",
+                            onAction = { PlatformBridge.openNotificationListenerSettings() },
+                        )
+                        HorizontalDivider()
+                        PermissionCheckRow(
+                            title = "悬浮窗权限（付款后 1 秒备注确认条）",
+                            desc = if (runtime.overlayPermissionGranted) "已授权，付款后可弹出快捷标签卡片补全买了什么" else "未授权，开启后即可在付款后一键点选早餐/午饭/超市标签",
+                            granted = runtime.overlayPermissionGranted,
+                            optional = !settings.floatingConfirmEnabled,
+                            actionLabel = "去授权",
+                            onAction = { PlatformBridge.openOverlayPermissionSettings() },
+                        )
+                        HorizontalDivider()
+                        PermissionCheckRow(
+                            title = "后台电池优化白名单（防杀后台）",
+                            desc = if (runtime.batteryOptimizationIgnored) "已加入无限制白名单，后台监听更稳定" else "未开启，小米/华为等系统可能会清理后台导致漏记",
+                            granted = runtime.batteryOptimizationIgnored,
+                            optional = false,
+                            actionLabel = "去设置",
+                            onAction = { PlatformBridge.openBatteryOptimizationSettings() },
+                        )
+                        HorizontalDivider()
+                        PermissionCheckRow(
+                            title = "记账结果通知权限",
+                            desc = if (runtime.postNotificationsGranted) "已允许发送自动记账提醒" else "未开启，自动记账后无法收到通知提醒",
+                            granted = runtime.postNotificationsGranted,
+                            optional = false,
+                            actionLabel = "去开启",
+                            onAction = { PlatformBridge.openAppNotificationSettings() },
+                        )
+                        TextButton(
+                            text = "重新检测权限状态",
+                            onClick = {
+                                runtime = PlatformBridge.getAutoTrackRuntimeStatus()
+                                onShowMessage("已刷新自动记账权限状态")
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    }
+                }
+            }
+        }
+
         // Hook Switches
         item(key = "switches") {
-            SmallTitle(text = "监听通道设置")
+            SmallTitle(text = "监听通道与悬浮确认设置")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     SwitchPreference(
@@ -139,22 +225,46 @@ fun AutoTrackScreen(
                     )
                     SwitchPreference(
                         title = "监听微信支付 (com.tencent.mm)",
-                        summary = "识别微信付款、转账、红包与收款通知",
+                        summary = "识别微信付款、转账、红包与支付页商品明细",
                         checked = settings.hookWeChat,
                         onCheckedChange = { onUpdateSettings(settings.copy(hookWeChat = it)) },
                     )
                     SwitchPreference(
                         title = "监听支付宝 (com.eg.android.AlipayGphone)",
-                        summary = "识别支付宝交易提醒、花呗消费、余额宝收益与收款",
+                        summary = "识别支付宝交易提醒、花呗消费与支付页商品明细",
                         checked = settings.hookAlipay,
                         onCheckedChange = { onUpdateSettings(settings.copy(hookAlipay = it)) },
                     )
                     SwitchPreference(
-                        title = "系统通知监听降级方案",
+                        title = "系统通知监听降级方案（免 Root）",
                         summary = "未启用 LSPosed 时通过 NotificationListenerService 兜底",
                         checked = settings.fallbackNotificationListener,
                         onCheckedChange = { onUpdateSettings(settings.copy(fallbackNotificationListener = it)) },
                     )
+                    SwitchPreference(
+                        title = "付款后弹出轻量悬浮确认条",
+                        summary = "自动记账后顶部弹出小卡片，1 秒点选快捷标签或补充买了什么（免 Root）",
+                        checked = settings.floatingConfirmEnabled,
+                        onCheckedChange = { onUpdateSettings(settings.copy(floatingConfirmEnabled = it)) },
+                    )
+                    if (settings.floatingConfirmEnabled) {
+                        Column(
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            Text("悬浮条自动收起倒计时", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                            FlowRow(
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                listOf(5, 6, 10, 15).forEach { sec ->
+                                    MochiChip("${sec} 秒", settings.floatingConfirmSeconds == sec) {
+                                        onUpdateSettings(settings.copy(floatingConfirmSeconds = sec))
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -361,6 +471,51 @@ fun AutoTrackScreen(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun PermissionCheckRow(
+    title: String,
+    desc: String,
+    granted: Boolean,
+    optional: Boolean,
+    actionLabel: String?,
+    onAction: () -> Unit,
+) {
+    val badgeColor = when {
+        granted -> MochiColors.Income
+        optional -> MochiColors.WarningAmber
+        else -> MochiColors.Expense
+    }
+    val badgeText = when {
+        granted -> "已就绪"
+        optional -> "可选"
+        else -> "缺少权限"
+    }
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
+    ) {
+        Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                MochiGlassBadge(text = badgeText, color = badgeColor)
+                Text(title, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            }
+            Text(
+                text = desc,
+                fontSize = 12.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+            )
+        }
+        if (!granted && actionLabel != null) {
+            TextButton(
+                text = actionLabel,
+                onClick = onAction,
+                colors = ButtonDefaults.textButtonColorsPrimary(),
+            )
         }
     }
 }

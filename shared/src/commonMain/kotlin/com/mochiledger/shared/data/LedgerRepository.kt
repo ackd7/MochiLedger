@@ -24,7 +24,9 @@ import com.mochiledger.shared.model.SyncMetadata
 import com.mochiledger.shared.model.TransactionType
 import com.mochiledger.shared.model.WebDavConfig
 import com.mochiledger.shared.model.formatFileSize
+import com.mochiledger.shared.parser.BillStatementImporter
 import com.mochiledger.shared.parser.PaymentMessageParser
+import com.mochiledger.shared.parser.StatementImportResult
 import com.mochiledger.shared.platform.LedgerDatabaseDriver
 import com.mochiledger.shared.platform.PlatformBridge
 import com.mochiledger.shared.sync.CsvExporter
@@ -610,6 +612,22 @@ class LedgerRepository(
         val ok = driver.deleteLocalBackup(absolutePath)
         refreshLocalBackups()
         return ok
+    }
+
+    fun importBillStatementCsv(csvText: String, importMissing: Boolean = true): StatementImportResult {
+        val s = _state.value
+        val result = BillStatementImporter.applyImportAndEnrich(
+            csvText = csvText,
+            existingTransactions = s.transactions,
+            accounts = s.accounts,
+            rules = s.activeRules,
+            importMissing = importMissing,
+            nowMillis = PlatformBridge.currentTimeMillis(),
+        )
+        if (result.success && (result.enrichedCount > 0 || result.importedCount > 0)) {
+            persist(s.copy(transactions = result.updatedTransactions))
+        }
+        return result
     }
 
     fun importJsonSnapshot(jsonText: String, restoreServerConfig: Boolean = true): SyncResult {

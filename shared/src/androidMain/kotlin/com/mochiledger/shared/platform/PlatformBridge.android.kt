@@ -1,11 +1,15 @@
 package com.mochiledger.shared.platform
 
+import android.Manifest
 import android.content.ContentValues
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
+import android.net.Uri
 import android.os.Build
+import android.os.PowerManager
 import android.provider.Settings
 import com.mochiledger.shared.model.LedgerSnapshot
 import com.mochiledger.shared.model.LocalBackupFileInfo
@@ -32,6 +36,9 @@ object AndroidPlatformContext {
 
     @Volatile
     var openBackupFilePicker: (((Result<Pair<String, String>>) -> Unit) -> Unit)? = null
+
+    @Volatile
+    var openStatementCsvPicker: (((Result<Pair<String, String>>) -> Unit) -> Unit)? = null
 
     @Volatile
     var saveBackupFilePicker: ((String, String, (Result<String>) -> Unit) -> Unit)? = null
@@ -328,11 +335,27 @@ actual object PlatformBridge {
     }
 
     actual fun getAutoTrackRuntimeStatus(): AutoTrackRuntimeStatus {
+        val ctx = AndroidPlatformContext.appContext
+        val overlayGranted = ctx?.let { runCatching { Settings.canDrawOverlays(it) }.getOrDefault(false) } ?: false
+        val batteryIgnored = ctx?.let {
+            runCatching {
+                val pm = it.getSystemService(Context.POWER_SERVICE) as? PowerManager
+                pm?.isIgnoringBatteryOptimizations(it.packageName) ?: false
+            }.getOrDefault(false)
+        } ?: false
+        val postNotificationsGranted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && ctx != null) {
+            ctx.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
         return AutoTrackRuntimeStatus(
             platformName = "Android ${Build.VERSION.RELEASE}",
             supportsLsposed = true,
             lsposedActive = AndroidPlatformContext.lsposedActiveProvider(),
             notificationListenerEnabled = AndroidPlatformContext.notificationListenerChecker(),
+            overlayPermissionGranted = overlayGranted,
+            batteryOptimizationIgnored = batteryIgnored,
+            postNotificationsGranted = postNotificationsGranted,
         )
     }
 
@@ -340,6 +363,52 @@ actual object PlatformBridge {
         val ctx = AndroidPlatformContext.appContext ?: return false
         return runCatching {
             val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            ctx.startActivity(intent)
+            true
+        }.getOrDefault(false)
+    }
+
+    actual fun openOverlayPermissionSettings(): Boolean {
+        val ctx = AndroidPlatformContext.appContext ?: return false
+        return runCatching {
+            val intent = Intent(
+                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                Uri.parse("package:${ctx.packageName}"),
+            ).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            ctx.startActivity(intent)
+            true
+        }.getOrDefault(false)
+    }
+
+    actual fun openBatteryOptimizationSettings(): Boolean {
+        val ctx = AndroidPlatformContext.appContext ?: return false
+        return runCatching {
+            val intent = Intent(
+                Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                Uri.parse("package:${ctx.packageName}"),
+            ).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            ctx.startActivity(intent)
+            true
+        }.recoverCatching {
+            val fallback = Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            ctx.startActivity(fallback)
+            true
+        }.getOrDefault(false)
+    }
+
+    actual fun openAppNotificationSettings(): Boolean {
+        val ctx = AndroidPlatformContext.appContext ?: return false
+        return runCatching {
+            val intent = Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                putExtra(Settings.EXTRA_APP_PACKAGE, ctx.packageName)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             ctx.startActivity(intent)
@@ -369,6 +438,15 @@ actual object PlatformBridge {
             picker(onResult)
         } else {
             onResult(Result.failure(IllegalStateException("文件选择器尚未就绪")))
+        }
+    }
+
+    actual fun pickStatementCsvContent(onResult: (Result<Pair<String, String>>) -> Unit) {
+        val picker = AndroidPlatformContext.openStatementCsvPicker
+        if (picker != null) {
+            picker(onResult)
+        } else {
+            onResult(Result.failure(IllegalStateException("账单文件选择器尚未就绪")))
         }
     }
 

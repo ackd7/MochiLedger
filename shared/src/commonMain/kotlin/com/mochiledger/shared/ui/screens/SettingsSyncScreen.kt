@@ -84,6 +84,7 @@ fun SettingsSyncScreen(
     onManualBackupNow: () -> Unit,
     onExportBackupWithPicker: () -> Unit,
     onPickImportBackupFile: (Boolean) -> Unit,
+    onPickImportStatementCsv: (Boolean) -> Unit,
     onRestoreLocalBackup: (String, Boolean) -> Unit,
     onDeleteLocalBackup: (String) -> Unit,
     onExportCsv: () -> Unit,
@@ -96,6 +97,7 @@ fun SettingsSyncScreen(
     val autoBackup = state.metadata.autoBackup
     var importJsonText by remember { mutableStateOf("") }
     var restoreServerConfigOnImport by remember { mutableStateOf(true) }
+    var importMissingFromCsv by remember { mutableStateOf(true) }
 
     fun handleBack() {
         if (subPage != SyncSubPage.HUB) {
@@ -510,6 +512,31 @@ fun SettingsSyncScreen(
                                             modifier = Modifier.fillMaxWidth(),
                                         )
                                     }
+                                }
+                            }
+                        }
+
+                        item(key = "statement_csv_card") {
+                            SmallTitle(text = "微信 / 支付宝官方账单导入与商品明细补全")
+                            Card(modifier = Modifier.fillMaxWidth()) {
+                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                    Text(
+                                        text = "支持直接导入微信支付 / 支付宝官方导出的 CSV 账单（自动识别 UTF-8 / GBK 编码）。按「金额 + 时间」自动匹配已有账单补全商户全称与商品说明，不会产生重复记账。",
+                                        fontSize = 12.sp,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    )
+                                    SwitchPreference(
+                                        title = "同时导入漏记账单",
+                                        summary = "开启后：已有账单自动补全商品明细，漏记账单自动导入；关闭则仅补全已有账单",
+                                        checked = importMissingFromCsv,
+                                        onCheckedChange = { importMissingFromCsv = it },
+                                    )
+                                    TextButton(
+                                        text = "选择微信 / 支付宝官方账单 (.csv)",
+                                        onClick = { onPickImportStatementCsv(importMissingFromCsv) },
+                                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                                        modifier = Modifier.fillMaxWidth(),
+                                    )
                                 }
                             }
                         }

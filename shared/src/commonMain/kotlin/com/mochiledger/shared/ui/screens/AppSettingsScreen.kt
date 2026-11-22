@@ -147,6 +147,21 @@ fun AppSettingsScreen(
                             }
                         }
                     },
+                    onPickImportStatementCsv = { importMissing ->
+                        PlatformBridge.pickStatementCsvContent { res ->
+                            scope.launch {
+                                res.fold(
+                                    onSuccess = { (_, content) ->
+                                        val imported = repository.importBillStatementCsv(content, importMissing)
+                                        onShowMessage(imported.message)
+                                    },
+                                    onFailure = { e ->
+                                        onShowMessage("账单导入提示：${e.message}")
+                                    },
+                                )
+                            }
+                        }
+                    },
                     onRestoreLocalBackup = { path, restoreServerConfig ->
                         onShowMessage(repository.importBackupFromFile(path, restoreServerConfig).message)
                     },

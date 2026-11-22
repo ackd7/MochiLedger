@@ -41,6 +41,10 @@ class AutoRecordReceiver : BroadcastReceiver() {
         val parsed = repo.parsePaymentPreview(pkg, title, content, recordSource) ?: return
         val savedTx = repo.recordParsedPayment(parsed) ?: return
 
+        if (settings.floatingConfirmEnabled) {
+            QuickConfirmOverlayService.show(context, savedTx.id, settings.floatingConfirmSeconds)
+        }
+
         postConfirmationNotification(
             context = context,
             title = "墨记已自动记账 · ${parsed.channel.label}",

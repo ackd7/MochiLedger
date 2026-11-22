@@ -121,8 +121,8 @@ class MochiXposedEntry : IXposedHookLoadPackage {
     private fun scanActivityPaymentResult(sourcePackage: String, activity: Activity) {
         runCatching {
             val root = activity.window?.decorView ?: return
-            val texts = ArrayList<String>(24)
-            collectVisibleTexts(root, texts, maxItems = 32)
+            val texts = ArrayList<String>(48)
+            collectVisibleTexts(root, texts, maxItems = 48)
             if (texts.isEmpty()) return
 
             val joined = texts.joinToString(" ")
@@ -138,15 +138,64 @@ class MochiXposedEntry : IXposedHookLoadPackage {
             if (now - lastSent < 10_000L) return
             recentUiBroadcasts[dedupeKey] = now
 
+            val structured = buildStructuredSummary(texts, joined)
             val title = if (sourcePackage == WECHAT_PACKAGE) "微信支付" else "支付宝交易提醒"
             sendToMochiLedger(
                 sourcePackage = sourcePackage,
                 title = title,
-                content = joined.take(280),
+                content = structured.take(360),
                 channelSource = "LSPOSED_UI",
             )
         }.onFailure {
             XposedBridge.log("$TAG: UI scan error: ${it.message}")
+        }
+    }
+
+    /**
+     * Extracts structured merchant, product/item description, and payment method from sequential
+     * TextView nodes on WeChat/Alipay payment result and bill detail screens.
+     */
+    private fun buildStructuredSummary(texts: List<String>, fallbackJoined: String): String {
+        var merchant = ""
+        var product = ""
+        var payMethod = ""
+
+        for (i in texts.indices) {
+            val cur = texts[i].trim().trimEnd(':', '：')
+            val next = texts.getOrNull(i + 1)?.trim().orEmpty()
+            if (next.isEmpty() || next.length > 60) continue
+
+            when {
+                merchant.isEmpty() && cur in MERCHANT_LABELS -> merchant = next
+                product.isEmpty() && cur in PRODUCT_LABELS -> product = next
+                payMethod.isEmpty() && cur in PAY_METHOD_LABELS -> payMethod = next
+            }
+        }
+
+        // Heuristic: on WeChat/Alipay payment result screens, the text right after "支付成功"/"付款成功"
+        // or right before the ¥ amount is often the merchant name.
+        if (merchant.isEmpty()) {
+            val amountIdx = texts.indexOfFirst { UI_AMOUNT_REGEX.containsMatchIn(it) }
+            if (amountIdx > 0) {
+                val prev = texts[amountIdx - 1].trim()
+                if (prev.length in 2..30 &&
+                    UI_SUCCESS_KEYWORDS.none { prev.contains(it) } &&
+                    prev !in listOf("完成", "返回商家", "查看账单", "支付方式", "付款方式")
+                ) {
+                    merchant = prev
+                }
+            }
+        }
+
+        val prefixParts = mutableListOf<String>()
+        if (merchant.isNotBlank()) prefixParts.add("商户：$merchant")
+        if (product.isNotBlank()) prefixParts.add("商品：$product")
+        if (payMethod.isNotBlank()) prefixParts.add("付款方式：$payMethod")
+
+        return if (prefixParts.isNotEmpty()) {
+            "${prefixParts.joinToString(" ")} $fallbackJoined"
+        } else {
+            fallbackJoined
         }
     }
 
@@ -240,5 +289,9 @@ class MochiXposedEntry : IXposedHookLoadPackage {
         )
 
         private val UI_AMOUNT_REGEX = Regex("""(?:¥|￥)\s*[0-9]+(?:\.[0-9]{1,2})?|[0-9]+(?:\.[0-9]{1,2})?\s*元""")
+
+        private val MERCHANT_LABELS = setOf("商户", "商户全称", "商家", "收款方", "付款给", "交易对方", "收款商家")
+        private val PRODUCT_LABELS = setOf("商品", "商品说明", "商品名称", "商品信息", "订单信息", "备注")
+        private val PAY_METHOD_LABELS = setOf("支付方式", "付款方式", "扣款方式")
     }
 }

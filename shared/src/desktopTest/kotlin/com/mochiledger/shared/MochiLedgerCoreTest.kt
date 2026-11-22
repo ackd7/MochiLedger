@@ -11,6 +11,7 @@ import com.mochiledger.shared.model.PaymentChannel
 import com.mochiledger.shared.model.SelfHostedSyncConfig
 import com.mochiledger.shared.model.TransactionType
 import com.mochiledger.shared.model.WebDavConfig
+import com.mochiledger.shared.parser.BillStatementImporter
 import com.mochiledger.shared.parser.PaymentMessageParser
 import com.mochiledger.shared.sync.LedgerJson
 import com.mochiledger.shared.sync.LedgerMerger
@@ -221,5 +222,74 @@ class MochiLedgerCoreTest {
         assertEquals("tester@example.com", decoded.serverConfig?.webDav?.username)
         assertTrue(decoded.serverConfig?.autoBackup?.dailyFirstOpenEnabled == true)
         assertEquals(6, decoded.serverConfig?.autoBackup?.intervalHours)
+    }
+
+    @Test
+    fun parseLsposedStructuredMerchantAndProductDetail() {
+        val parsed = PaymentMessageParser.parse(
+            packageName = PaymentChannel.WECHAT.packageName,
+            title = "微信支付",
+            content = "商户：瑞幸咖啡 商品：生椰拿铁大杯 付款方式：零钱 支付成功 ￥19.90",
+            rules = rules,
+            accounts = accounts,
+            nowMillis = now,
+        )
+        assertNotNull(parsed)
+        assertEquals("瑞幸咖啡", parsed.merchant)
+        assertEquals(1990L, parsed.amountCents)
+        assertTrue(parsed.note.contains("生椰拿铁大杯"))
+        assertEquals("cat_food", parsed.suggestedCategoryId)
+    }
+
+    @Test
+    fun billStatementCsvEnrichesExistingAndImportsMissing() {
+        val csv = """
+            微信支付账单明细
+            ----------------------
+            交易时间,交易类型,交易对方,商品,收/支,金额(元),支付方式,当前状态,交易单号,商户单号,备注
+            2026-11-22 12:15:10,商户消费,美团外卖,"黄焖鸡米饭套餐",支出,¥28.50,零钱,支付成功,1001,2001,/
+            2026-11-22 18:30:00,商户消费,京东自营,"Type-C快充数据线",支出,¥39.90,零钱,支付成功,1002,2002,/
+        """.trimIndent()
+
+        // First parse to obtain exact local-timezone timestamp of row 1
+        val (_, parsedRows) = BillStatementImporter.parseCsv(csv)
+        assertEquals(2, parsedRows.size)
+
+        // Simulate an earlier auto-tracked record with generic merchant & empty detail (12s apart)
+        val existingAutoTx = LedgerTransaction(
+            id = "tx_auto_1",
+            type = TransactionType.EXPENSE,
+            amountCents = 2850L,
+            categoryId = "cat_other_exp",
+            accountId = "acc_wechat",
+            timestamp = parsedRows[0].timestamp + 12_000L,
+            merchant = "微信支付",
+            note = "微信支付",
+            updatedAt = now,
+        )
+
+        val res = BillStatementImporter.applyImportAndEnrich(
+            csvText = csv,
+            existingTransactions = listOf(existingAutoTx),
+            accounts = accounts,
+            rules = rules,
+            importMissing = true,
+            nowMillis = now + 5000L,
+        )
+
+        assertTrue(res.success)
+        assertEquals(1, res.enrichedCount)
+        assertEquals(1, res.importedCount)
+        assertEquals(2, res.updatedTransactions.size)
+
+        val enriched = res.updatedTransactions.first { it.id == "tx_auto_1" }
+        assertEquals("美团外卖", enriched.merchant)
+        assertTrue(enriched.note.contains("黄焖鸡米饭套餐"))
+        assertEquals("cat_food", enriched.categoryId)
+
+        val imported = res.updatedTransactions.first { it.id != "tx_auto_1" }
+        assertEquals("京东自营", imported.merchant)
+        assertTrue(imported.note.contains("Type-C快充数据线"))
+        assertEquals("cat_shopping", imported.categoryId)
     }
 }

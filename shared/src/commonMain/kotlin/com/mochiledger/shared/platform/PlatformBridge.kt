@@ -17,7 +17,10 @@ data class AutoTrackRuntimeStatus(
     val supportsLsposed: Boolean,
     val lsposedActive: Boolean,
     val notificationListenerEnabled: Boolean,
-    val hookVersion: String = "1.0.0",
+    val overlayPermissionGranted: Boolean = false,
+    val batteryOptimizationIgnored: Boolean = false,
+    val postNotificationsGranted: Boolean = true,
+    val hookVersion: String = "1.2.0",
 )
 
 interface LedgerDatabaseDriver {
@@ -48,8 +51,12 @@ expect object PlatformBridge {
     ): HttpResponseData
     fun getAutoTrackRuntimeStatus(): AutoTrackRuntimeStatus
     fun openNotificationListenerSettings(): Boolean
+    fun openOverlayPermissionSettings(): Boolean
+    fun openBatteryOptimizationSettings(): Boolean
+    fun openAppNotificationSettings(): Boolean
     fun openUrl(url: String): Boolean
     fun defaultDeviceId(): String
     fun pickBackupFileContent(onResult: (Result<Pair<String, String>>) -> Unit)
+    fun pickStatementCsvContent(onResult: (Result<Pair<String, String>>) -> Unit)
     fun saveFileWithPicker(suggestedFileName: String, content: String, onResult: (Result<String>) -> Unit)
 }
