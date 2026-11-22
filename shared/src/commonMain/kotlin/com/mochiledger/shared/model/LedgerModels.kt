@@ -208,7 +208,7 @@ data class ChangelogEntry(
 )
 
 object AppInfo {
-    const val VERSION_NAME = "1.0.7"
+    const val VERSION_NAME = "1.0.8"
     const val GITHUB_OWNER = "ackd7"
     const val GITHUB_REPO = "MochiLedger"
     const val GITHUB_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO"
@@ -216,6 +216,14 @@ object AppInfo {
     const val RELEASES_LATEST_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
 
     val CHANGELOG: List<ChangelogEntry> = listOf(
+        ChangelogEntry(
+            version = "v1.0.8",
+            title = "统计页布局与动态月份标题优化",
+            changes = listOf(
+                "统计页「支出分析 / 收入分析」切换栏改为顶部居中，解决小屏手机顶部按钮拥挤裁切问题",
+                "日期月份选择器移入汇总卡片内部，切换月份后环形图中央自动动态显示对应年月的总支出/总收入",
+            ),
+        ),
         ChangelogEntry(
             version = "v1.0.7",
             title = "Windows 与 Android 双端统一应用图标修复",

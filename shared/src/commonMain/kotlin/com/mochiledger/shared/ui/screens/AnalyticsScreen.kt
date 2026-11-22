@@ -75,61 +75,75 @@ fun AnalyticsScreen(state: LedgerUiState, bottomInset: Dp = 0.dp) {
         item(key = "header") {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     MochiChip("支出分析", showExpense, MochiColors.Expense) { showExpense = true }
                     MochiChip("收入分析", !showExpense, MochiColors.Income) { showExpense = false }
-                }
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
-                    MochiChip("◀", false) {
-                        if (selectedMonth == 1) {
-                            selectedYear -= 1
-                            selectedMonth = 12
-                        } else {
-                            selectedMonth -= 1
-                        }
-                    }
-                    // Clickable date pill opening quick year/month picker
-                    Row(
-                        modifier = Modifier
-                            .clip(mochiShape(14.dp))
-                            .background(MiuixTheme.colorScheme.surfaceContainer)
-                            .border(1.dp, MiuixTheme.colorScheme.outline.copy(alpha = 0.35f), mochiShape(14.dp))
-                            .clickable { showDatePicker = true }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        FlatIcon("calendar", MiuixTheme.colorScheme.primary, size = 15.dp)
-                        Text(
-                            text = "${selectedYear}-${selectedMonth.toString().padStart(2, '0')}",
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp,
-                        )
-                    }
-                    MochiChip("▶", false) {
-                        if (selectedMonth == 12) {
-                            selectedYear += 1
-                            selectedMonth = 1
-                        } else {
-                            selectedMonth += 1
-                        }
-                    }
                 }
             }
         }
 
         item(key = "donut") {
+            val isCurrentMonth = selectedYear == nowDt.year && selectedMonth == nowDt.monthNumber
+            val periodLabel = when {
+                isCurrentMonth -> "本月"
+                selectedYear == nowDt.year -> "${selectedMonth}月"
+                else -> "${selectedYear}年${selectedMonth}月"
+            }
+            val totalLabel = if (showExpense) "${periodLabel}总支出" else "${periodLabel}总收入"
+
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.fillMaxWidth().padding(20.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
+                    // Date selector placed cleanly inside the summary card
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        MochiChip("◀", false) {
+                            if (selectedMonth == 1) {
+                                selectedYear -= 1
+                                selectedMonth = 12
+                            } else {
+                                selectedMonth -= 1
+                            }
+                        }
+                        Row(
+                            modifier = Modifier
+                                .clip(mochiShape(14.dp))
+                                .background(MiuixTheme.colorScheme.surfaceContainer)
+                                .border(1.dp, MiuixTheme.colorScheme.outline.copy(alpha = 0.35f), mochiShape(14.dp))
+                                .clickable { showDatePicker = true }
+                                .padding(horizontal = 14.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            FlatIcon("calendar", MiuixTheme.colorScheme.primary, size = 15.dp)
+                            Text(
+                                text = "${selectedYear}年${selectedMonth.toString().padStart(2, '0')}月",
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                            )
+                        }
+                        MochiChip("▶", false) {
+                            if (selectedMonth == 12) {
+                                selectedYear += 1
+                                selectedMonth = 1
+                            } else {
+                                selectedMonth += 1
+                            }
+                        }
+                    }
+
+                    Spacer(Modifier.height(18.dp))
+
                     CategoryDonutChart(
                         stats = activeStats,
-                        totalLabel = if (showExpense) "本月总支出" else "本月总收入",
+                        totalLabel = totalLabel,
                         totalAmountText = formatCents(activeTotal),
                     )
                     Spacer(Modifier.height(16.dp))
@@ -183,7 +197,7 @@ fun AnalyticsScreen(state: LedgerUiState, bottomInset: Dp = 0.dp) {
         }
 
         item(key = "daily_trend") {
-            SmallTitle(text = "每日支出趋势")
+            SmallTitle(text = "${selectedYear}年${selectedMonth}月 每日支出趋势")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(18.dp)) {
                     DailySpendingBarChart(
