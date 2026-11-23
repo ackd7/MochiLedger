@@ -197,6 +197,12 @@ fun AutoTrackScreen(
                     }
                 }
             }
+            Text(
+                text = "提示：不推荐与「常规系统通知监听」同时开启（易重复触发）；可搭配「付款后悬浮确认条」与「官方账单 CSV 补全」一起使用。",
+                fontSize = 11.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp),
+            )
         }
 
         // Scheme 2: Regular Non-Root Scheme (grayed & locked when LSPosed is active)
@@ -229,6 +235,12 @@ fun AutoTrackScreen(
                     )
                 }
             }
+            Text(
+                text = "提示：免 Root 设备推荐；不推荐与 LSPosed 模式混用；可搭配「付款后悬浮确认条」及「官方账单 CSV 补全」使用。",
+                fontSize = 11.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp),
+            )
         }
 
         // Clean Permission Health Check (Android only; only checks permissions relevant to enabled schemes)

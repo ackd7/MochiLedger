@@ -244,7 +244,7 @@ data class ChangelogEntry(
 )
 
 object AppInfo {
-    const val VERSION_NAME = "1.4.0-rc.2"
+    const val VERSION_NAME = "1.4.0"
     const val GITHUB_OWNER = "ackd7"
     const val GITHUB_REPO = "MochiLedger"
     const val GITHUB_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO"
@@ -252,6 +252,17 @@ object AppInfo {
     const val RELEASES_LATEST_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
 
     val CHANGELOG: List<ChangelogEntry> = listOf(
+        ChangelogEntry(
+            version = "v1.4.0",
+            title = "Google Calendar 日历选择器 · Android 永久统一签名 · LSPosed 收款人记忆 · 极简扁平钱包图标 · 高星记账规则库",
+            changes = listOf(
+                "参考 Google Calendar 重构统计页日期选择器：标准星期对齐月历、账单日期小圆点、点击年月展开快捷跨年跨月网格、顶部「今天」与底部「看整月 / 看全年 / 查看当日」一键切换",
+                "引入 Android 永久固定签名证书（mochiledger.jks），彻底解决每次更新提示签名不同的问题，后续版本均可直接覆盖升级",
+                "升级 LSPosed 收银台收款人记忆 + 弹窗监听，自动补全通知中缺失的收款人名字；账单详情页支持查看原始支付信息",
+                "采用 Simple Icons 官方极简扁平矢量路径重构微信、支付宝、Apple Pay、Visa 钱包图标，严格延续 Miuix + Mochi 审美；全端选项条支持触控左滑横拉",
+                "参考 ezBookkeeping / AutoAccounting 等高星项目大幅扩充默认智能分类规则库，并在自动记账方案下方增加互斥与搭配使用提示",
+            ),
+        ),
         ChangelogEntry(
             version = "v1.3.0",
             title = "全端交互与界面精雕 · 今日记账 · 精细日期与分类统计 · 专属资产图标 · 扁平化备份中心",
@@ -397,12 +408,15 @@ object DefaultLedgerSeed {
     )
 
     fun defaultRules(now: Long): List<AutoTrackRule> = listOf(
-        AutoTrackRule("rule_meituan", "外卖餐饮", "美团|饿了么|瑞幸|星巴克|麦当劳|肯德基|喜茶|霸王茶姬|餐饮|食堂", null, "cat_food", null, true, now),
-        AutoTrackRule("rule_transport", "打车通勤", "滴滴|高德打车|地铁|公交|铁路12306|中石化|中石油|高速|充电", null, "cat_transport", null, true, now),
-        AutoTrackRule("rule_shopping", "电商购物", "淘宝|天猫|京东|拼多多|盒马|山姆|沃尔玛|超市|便利店", null, "cat_shopping", null, true, now),
-        AutoTrackRule("rule_digital", "云服务与会员", "Apple|iCloud|Steam|B站|网易云|腾讯视频|爱奇艺|阿里云|腾讯云", null, "cat_digital", null, true, now),
-        AutoTrackRule("rule_housing", "水电话费", "国家电网|水务|燃气|中国移动|中国联通|中国电信|宽带|物业", null, "cat_housing", null, true, now),
-        AutoTrackRule("rule_yuebao", "余额宝收益", "余额宝|理财通|收益|分红", PaymentChannel.ALIPAY, "cat_invest", "acc_alipay", true, now),
+        AutoTrackRule("rule_meituan", "餐饮美食", "美团|饿了么|瑞幸|星巴克|库迪|麦当劳|肯德基|汉堡王|塔斯汀|喜茶|霸王茶姬|蜜雪冰城|茶百道|古茗|奈雪|海底捞|萨莉亚|必胜客|沙县|拉面|麻辣烫|烧烤|火锅|奶茶|咖啡|餐饮|食堂|早餐|午餐|晚餐|外卖|面包|烘焙|水果|百果园", null, "cat_food", null, true, now),
+        AutoTrackRule("rule_transport", "交通出行", "滴滴|高德打车|曹操出行|T3出行|花小猪|哈啰|美团单车|青桔|地铁|公交|乘车码|铁路12306|携程|去哪儿|飞猪|中石化|中石油|壳牌|特来电|星星充电|小桔充电|高速|ETC|停车|洗车|顺丰|菜鸟|快递", null, "cat_transport", null, true, now),
+        AutoTrackRule("rule_shopping", "购物超市", "淘宝|天猫|京东|拼多多|唯品会|得物|抖音电商|盒马|山姆|开市客|沃尔玛|永辉|大润发|华润万家|胖东来|罗森|全家|7-Eleven|711|美宜佳|便利蜂|超市|便利店|屈臣氏|名创优品|优衣库|迪卡侬|无印良品|宜家", null, "cat_shopping", null, true, now),
+        AutoTrackRule("rule_digital", "数码订阅", "Apple|App Store|iCloud|Google|Steam|Nintendo|PlayStation|Xbox|B站|哔哩哔哩|网易云|QQ音乐|腾讯视频|爱奇艺|优酷|百度网盘|夸克|WPS|ChatGPT|Claude|OpenAI|GitHub|阿里云|腾讯云|Cloudflare|会员|订阅", null, "cat_digital", null, true, now),
+        AutoTrackRule("rule_housing", "居家水电", "国家电网|南方电网|电费|水务|水费|燃气|天然气|供暖|中国移动|中国联通|中国电信|广电|话费|宽带|物业|房租|自如|贝壳", null, "cat_housing", null, true, now),
+        AutoTrackRule("rule_entertainment", "休闲娱乐", "电影|猫眼|淘票票|万达影城|KTV|剧本杀|密室|台球|健身|乐刻|Keep|门票|景区|乐园|迪士尼|腾讯游戏|米哈游|网易游戏", null, "cat_entertainment", null, true, now),
+        AutoTrackRule("rule_medical", "医疗药店", "医院|诊所|口腔|牙科|眼科|药房|药店|大药房|益丰|老百姓|一心堂|叮当快药|京东健康|阿里健康|体检|挂号|医保", null, "cat_medical", null, true, now),
+        AutoTrackRule("rule_yuebao", "理财收益", "余额宝|理财通|零钱通|收益|分红|利息|基金", null, "cat_invest", null, true, now),
+        AutoTrackRule("rule_salary", "工资薪酬", "工资|薪酬|薪资|奖金|绩效|补贴|津贴|代发", null, "cat_salary", null, true, now),
     )
 
     fun defaultBudgets(now: Long): List<LedgerBudget> = listOf(

@@ -239,12 +239,23 @@ object PaymentMessageParser {
     private fun defaultCategoryFor(type: TransactionType, text: String): String {
         return when (type) {
             TransactionType.INCOME -> when {
-                text.contains("退款") -> "cat_refund"
-                text.contains("收益") || text.contains("余额宝") || text.contains("理财") -> "cat_invest"
+                text.contains("工资") || text.contains("薪酬") || text.contains("薪资") || text.contains("奖金") || text.contains("代发") -> "cat_salary"
+                text.contains("退款") || text.contains("退回") || text.contains("报销") -> "cat_refund"
+                text.contains("收益") || text.contains("余额宝") || text.contains("理财") || text.contains("分红") || text.contains("利息") -> "cat_invest"
                 text.contains("红包") || text.contains("转账") -> "cat_redpacket"
                 else -> "cat_other_inc"
             }
-            TransactionType.EXPENSE -> "cat_other_exp"
+            TransactionType.EXPENSE -> when {
+                listOf("餐饮", "美食", "外卖", "咖啡", "奶茶", "瑞幸", "星巴克", "美团", "饿了么", "麦当劳", "肯德基", "食堂", "火锅", "烧烤", "拉面", "水果", "面包", "早餐", "午饭", "晚饭").any { text.contains(it, true) } -> "cat_food"
+                listOf("滴滴", "打车", "地铁", "公交", "乘车码", "12306", "中石化", "中石油", "加油", "充电", "高速", "ETC", "停车", "快递", "顺丰").any { text.contains(it, true) } -> "cat_transport"
+                listOf("淘宝", "天猫", "京东", "拼多多", "盒马", "山姆", "超市", "便利店", "罗森", "全家", "711", "屈臣氏", "优衣库", "购物").any { text.contains(it, true) } -> "cat_shopping"
+                listOf("电网", "电费", "水费", "水务", "燃气", "移动", "联通", "电信", "话费", "宽带", "物业", "房租").any { text.contains(it, true) } -> "cat_housing"
+                listOf("Apple", "iCloud", "Steam", "B站", "网易云", "腾讯视频", "爱奇艺", "阿里云", "腾讯云", "WPS", "会员", "订阅").any { text.contains(it, true) } -> "cat_digital"
+                listOf("电影", "猫眼", "淘票票", "KTV", "健身", "门票", "景区", "游戏", "米哈游").any { text.contains(it, true) } -> "cat_entertainment"
+                listOf("医院", "诊所", "药房", "药店", "体检", "挂号", "医保", "牙科", "口腔").any { text.contains(it, true) } -> "cat_medical"
+                listOf("红包", "礼金", "鲜花", "礼物", "生日").any { text.contains(it, true) } -> "cat_social"
+                else -> "cat_other_exp"
+            }
             TransactionType.TRANSFER -> "cat_transfer"
         }
     }

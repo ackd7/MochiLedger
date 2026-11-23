@@ -11,8 +11,8 @@ android {
         applicationId = "com.mochiledger.android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 16
-        versionName = "1.4.0-rc.2"
+        versionCode = 17
+        versionName = "1.4.0"
     }
 
     splits {
