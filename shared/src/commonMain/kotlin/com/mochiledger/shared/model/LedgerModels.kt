@@ -244,7 +244,7 @@ data class ChangelogEntry(
 )
 
 object AppInfo {
-    const val VERSION_NAME = "1.4.0-rc.1"
+    const val VERSION_NAME = "1.4.0-rc.2"
     const val GITHUB_OWNER = "ackd7"
     const val GITHUB_REPO = "MochiLedger"
     const val GITHUB_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO"

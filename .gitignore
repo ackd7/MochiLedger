@@ -5,6 +5,7 @@ build/
 local.properties
 *.iml
 *.jks
+!androidApp/mochiledger.jks
 *.keystore
 *.db
 *.db-journal

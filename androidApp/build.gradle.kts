@@ -11,8 +11,8 @@ android {
         applicationId = "com.mochiledger.android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 15
-        versionName = "1.4.0-rc.1"
+        versionCode = 16
+        versionName = "1.4.0-rc.2"
     }
 
     splits {
@@ -24,8 +24,21 @@ android {
         }
     }
 
+    signingConfigs {
+        create("unified") {
+            storeFile = file(System.getenv("MOCHI_KEYSTORE_PATH") ?: "mochiledger.jks")
+            storePassword = System.getenv("MOCHI_KEYSTORE_PASSWORD") ?: "mochiledger2026"
+            keyAlias = System.getenv("MOCHI_KEY_ALIAS") ?: "mochiledger"
+            keyPassword = System.getenv("MOCHI_KEY_PASSWORD") ?: "mochiledger2026"
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("unified")
+        }
         release {
+            signingConfig = signingConfigs.getByName("unified")
             isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),

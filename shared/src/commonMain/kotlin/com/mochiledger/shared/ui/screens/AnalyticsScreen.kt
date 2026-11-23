@@ -25,11 +25,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,7 +49,9 @@ import com.mochiledger.shared.ui.components.MochiProgressBar
 import com.mochiledger.shared.ui.components.TransactionRow
 import com.mochiledger.shared.ui.theme.MochiColors
 import com.mochiledger.shared.ui.theme.mochiShape
+import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.Instant
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
@@ -457,7 +461,13 @@ fun AnalyticsScreen(state: LedgerUiState, bottomInset: Dp = 0.dp) {
     }
 
     if (showDatePicker) {
-        FineGrainedDatePickerDialog(
+        val daysWithRecords = remember(state.transactions) {
+            state.activeTransactions.map { tx ->
+                val dt = Instant.fromEpochMilliseconds(tx.timestamp).toLocalDateTime(tz)
+                Triple(dt.year, dt.monthNumber, dt.dayOfMonth)
+            }.toSet()
+        }
+        GoogleCalendarDatePickerDialog(
             initialMode = periodMode,
             initialYear = selectedYear,
             initialMonth = selectedMonth,
@@ -465,6 +475,7 @@ fun AnalyticsScreen(state: LedgerUiState, bottomInset: Dp = 0.dp) {
             currentYear = nowDt.year,
             currentMonth = nowDt.monthNumber,
             currentDay = nowDt.dayOfMonth,
+            daysWithRecords = daysWithRecords,
             onDismiss = { showDatePicker = false },
             onConfirm = { mode, y, m, d ->
                 periodMode = mode
@@ -477,9 +488,22 @@ fun AnalyticsScreen(state: LedgerUiState, bottomInset: Dp = 0.dp) {
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
+private fun firstDayOffsetSundayStart(year: Int, month: Int): Int {
+    val dow = LocalDate(year, month, 1).dayOfWeek
+    return when (dow) {
+        DayOfWeek.SUNDAY -> 0
+        DayOfWeek.MONDAY -> 1
+        DayOfWeek.TUESDAY -> 2
+        DayOfWeek.WEDNESDAY -> 3
+        DayOfWeek.THURSDAY -> 4
+        DayOfWeek.FRIDAY -> 5
+        DayOfWeek.SATURDAY -> 6
+        else -> 0
+    }
+}
+
 @Composable
-private fun FineGrainedDatePickerDialog(
+private fun GoogleCalendarDatePickerDialog(
     initialMode: StatsPeriodMode,
     initialYear: Int,
     initialMonth: Int,
@@ -487,13 +511,17 @@ private fun FineGrainedDatePickerDialog(
     currentYear: Int,
     currentMonth: Int,
     currentDay: Int,
+    daysWithRecords: Set<Triple<Int, Int, Int>>,
     onDismiss: () -> Unit,
     onConfirm: (StatsPeriodMode, Int, Int, Int) -> Unit,
 ) {
-    var mode by remember { mutableStateOf(initialMode) }
     var pickerYear by remember { mutableStateOf(initialYear) }
     var pickerMonth by remember { mutableStateOf(initialMonth) }
-    var pickerDay by remember { mutableStateOf(initialDay) }
+    var pickerDay by remember { mutableStateOf(initialDay.coerceIn(1, daysInMonth(initialYear, initialMonth))) }
+    var showYearMonthGrid by remember { mutableStateOf(false) }
+
+    val weekdays = listOf("日", "一", "二", "三", "四", "五", "六")
+    val years = remember(currentYear) { ((currentYear - 5)..(currentYear + 2)).toList() }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -501,177 +529,225 @@ private fun FineGrainedDatePickerDialog(
                 modifier = Modifier.padding(18.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Text("选择统计日期", fontSize = 17.sp, fontWeight = FontWeight.Bold)
-
-                // Mode tabs: 按日 / 按月 / 按年
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    StatsPeriodMode.entries.forEach { m ->
-                        MochiChip(m.label, mode == m) { mode = m }
-                    }
-                }
-
-                // Quick shortcuts
-                FlowRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                // Google Calendar style clean header: selected date headline + "今天" shortcut
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
+                    Column {
+                        Text(
+                            text = "统计日期",
+                            fontSize = 11.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                        Text(
+                            text = "${pickerYear}年${pickerMonth}月${pickerDay}日",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
                     MochiChip("今天", false) {
-                        onConfirm(StatsPeriodMode.DAY, currentYear, currentMonth, currentDay)
-                    }
-                    MochiChip("本月", false) {
-                        onConfirm(StatsPeriodMode.MONTH, currentYear, currentMonth, currentDay)
-                    }
-                    val prevY = if (currentMonth == 1) currentYear - 1 else currentYear
-                    val prevM = if (currentMonth == 1) 12 else currentMonth - 1
-                    MochiChip("上月", false) {
-                        onConfirm(StatsPeriodMode.MONTH, prevY, prevM, 1)
-                    }
-                    MochiChip("今年", false) {
-                        onConfirm(StatsPeriodMode.YEAR, currentYear, currentMonth, currentDay)
-                    }
-                    MochiChip("去年", false) {
-                        onConfirm(StatsPeriodMode.YEAR, currentYear - 1, currentMonth, 1)
+                        pickerYear = currentYear
+                        pickerMonth = currentMonth
+                        pickerDay = currentDay
+                        showYearMonthGrid = false
                     }
                 }
 
-                when (mode) {
-                    StatsPeriodMode.YEAR -> {
-                        val years = ((currentYear - 4)..(currentYear + 1)).toList()
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            years.chunked(3).forEach { rowYears ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    rowYears.forEach { y ->
-                                        val selected = pickerYear == y
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .clip(mochiShape(12.dp))
-                                                .background(if (selected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceContainer)
-                                                .clickable {
-                                                    pickerYear = y
-                                                    onConfirm(StatsPeriodMode.YEAR, y, pickerMonth, pickerDay)
-                                                }
-                                                .padding(vertical = 12.dp),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            Text(
-                                                "${y}年",
-                                                color = if (selected) Color.White else MiuixTheme.colorScheme.onSurface,
-                                                fontSize = 14.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                HorizontalDivider()
+
+                // Google Calendar month/year dropdown bar + prev/next month arrows
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .clip(mochiShape(10.dp))
+                            .clickable { showYearMonthGrid = !showYearMonthGrid }
+                            .padding(horizontal = 8.dp, vertical = 6.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text(
+                            text = "${pickerYear}年${pickerMonth}月",
+                            fontSize = 15.sp,
+                            fontWeight = FontWeight.SemiBold,
+                        )
+                        Text(
+                            text = if (showYearMonthGrid) "▴" else "▾",
+                            fontSize = 13.sp,
+                            color = MiuixTheme.colorScheme.primary,
+                        )
                     }
 
-                    StatsPeriodMode.MONTH -> {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            MochiChip("◀ ${pickerYear - 1}", false) { pickerYear -= 1 }
-                            Text("${pickerYear} 年", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                            MochiChip("${pickerYear + 1} ▶", false) { pickerYear += 1 }
-                        }
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            for (rowIdx in 0 until 3) {
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                ) {
-                                    for (colIdx in 0 until 4) {
-                                        val m = rowIdx * 4 + colIdx + 1
-                                        val selected = pickerMonth == m
-                                        Box(
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .clip(mochiShape(12.dp))
-                                                .background(if (selected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceContainer)
-                                                .clickable {
-                                                    pickerMonth = m
-                                                    onConfirm(StatsPeriodMode.MONTH, pickerYear, m, 1)
-                                                }
-                                                .padding(vertical = 10.dp),
-                                            contentAlignment = Alignment.Center,
-                                        ) {
-                                            Text(
-                                                "${m}月",
-                                                color = if (selected) Color.White else MiuixTheme.colorScheme.onSurface,
-                                                fontSize = 13.sp,
-                                                fontWeight = FontWeight.SemiBold,
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-
-                    StatsPeriodMode.DAY -> {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            MochiChip("◀", false) {
-                                if (pickerMonth == 1) {
-                                    pickerYear -= 1
-                                    pickerMonth = 12
-                                } else {
-                                    pickerMonth -= 1
-                                }
-                                pickerDay = pickerDay.coerceAtMost(daysInMonth(pickerYear, pickerMonth))
-                            }
-                            Text("${pickerYear}年${pickerMonth}月", fontSize = 15.sp, fontWeight = FontWeight.Bold)
-                            MochiChip("▶", false) {
-                                if (pickerMonth == 12) {
-                                    pickerYear += 1
-                                    pickerMonth = 1
-                                } else {
-                                    pickerMonth += 1
-                                }
-                                pickerDay = pickerDay.coerceAtMost(daysInMonth(pickerYear, pickerMonth))
-                            }
-                        }
-                        val totalDays = daysInMonth(pickerYear, pickerMonth)
-                        val rows = (1..totalDays).toList().chunked(7)
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            rows.forEach { week ->
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                ) {
-                                    for (idx in 0 until 7) {
-                                        val d = week.getOrNull(idx)
-                                        if (d == null) {
-                                            Spacer(Modifier.weight(1f))
+                    if (!showYearMonthGrid) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(MiuixTheme.colorScheme.surfaceContainer)
+                                    .clickable {
+                                        if (pickerMonth == 1) {
+                                            pickerYear -= 1
+                                            pickerMonth = 12
                                         } else {
-                                            val selected = pickerDay == d
-                                            Box(
-                                                modifier = Modifier
-                                                    .weight(1f)
-                                                    .clip(mochiShape(10.dp))
-                                                    .background(if (selected) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceContainer)
-                                                    .clickable {
-                                                        pickerDay = d
-                                                        onConfirm(StatsPeriodMode.DAY, pickerYear, pickerMonth, d)
-                                                    }
-                                                    .padding(vertical = 8.dp),
-                                                contentAlignment = Alignment.Center,
-                                            ) {
-                                                Text(
-                                                    "$d",
-                                                    color = if (selected) Color.White else MiuixTheme.colorScheme.onSurface,
-                                                    fontSize = 12.sp,
-                                                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                                                )
+                                            pickerMonth -= 1
+                                        }
+                                        pickerDay = pickerDay.coerceAtMost(daysInMonth(pickerYear, pickerMonth))
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text("‹", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                            }
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(CircleShape)
+                                    .background(MiuixTheme.colorScheme.surfaceContainer)
+                                    .clickable {
+                                        if (pickerMonth == 12) {
+                                            pickerYear += 1
+                                            pickerMonth = 1
+                                        } else {
+                                            pickerMonth += 1
+                                        }
+                                        pickerDay = pickerDay.coerceAtMost(daysInMonth(pickerYear, pickerMonth))
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text("›", fontSize = 18.sp, fontWeight = FontWeight.Medium)
+                            }
+                        }
+                    }
+                }
+
+                if (showYearMonthGrid) {
+                    // Year horizontal strip + 3x4 Month Grid (Google Calendar dropdown view)
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        years.forEach { y ->
+                            MochiChip("${y}年", pickerYear == y) {
+                                pickerYear = y
+                                pickerDay = pickerDay.coerceAtMost(daysInMonth(y, pickerMonth))
+                            }
+                        }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (r in 0 until 3) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                for (c in 0 until 4) {
+                                    val m = r * 4 + c + 1
+                                    val isSel = pickerMonth == m
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(mochiShape(12.dp))
+                                            .background(if (isSel) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceContainer)
+                                            .clickable {
+                                                pickerMonth = m
+                                                pickerDay = pickerDay.coerceAtMost(daysInMonth(pickerYear, m))
+                                                showYearMonthGrid = false
+                                            }
+                                            .padding(vertical = 10.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            text = "${m}月",
+                                            color = if (isSel) Color.White else MiuixTheme.colorScheme.onSurface,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    // Real weekday-aligned Google Calendar month grid (日 一 二 三 四 五 六)
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        weekdays.forEach { wd ->
+                            Text(
+                                text = wd,
+                                modifier = Modifier.weight(1f),
+                                textAlign = TextAlign.Center,
+                                fontSize = 12.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                fontWeight = FontWeight.Medium,
+                            )
+                        }
+                    }
+
+                    val offset = firstDayOffsetSundayStart(pickerYear, pickerMonth)
+                    val totalDays = daysInMonth(pickerYear, pickerMonth)
+                    val cells = buildList<Int?> {
+                        repeat(offset) { add(null) }
+                        for (d in 1..totalDays) add(d)
+                        while (size % 7 != 0) add(null)
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        cells.chunked(7).forEach { week ->
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                week.forEach { d ->
+                                    if (d == null) {
+                                        Spacer(Modifier.weight(1f).height(40.dp))
+                                    } else {
+                                        val isSelected = d == pickerDay
+                                        val isToday = pickerYear == currentYear && pickerMonth == currentMonth && d == currentDay
+                                        val hasTx = daysWithRecords.contains(Triple(pickerYear, pickerMonth, d))
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(40.dp)
+                                                .clickable { pickerDay = d },
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(32.dp)
+                                                        .clip(CircleShape)
+                                                        .then(
+                                                            when {
+                                                                isSelected -> Modifier.background(MiuixTheme.colorScheme.primary)
+                                                                isToday -> Modifier.border(1.5.dp, MiuixTheme.colorScheme.primary, CircleShape)
+                                                                else -> Modifier
+                                                            },
+                                                        ),
+                                                    contentAlignment = Alignment.Center,
+                                                ) {
+                                                    Text(
+                                                        text = "$d",
+                                                        fontSize = 13.sp,
+                                                        fontWeight = if (isSelected || isToday) FontWeight.Bold else FontWeight.Normal,
+                                                        color = when {
+                                                            isSelected -> Color.White
+                                                            isToday -> MiuixTheme.colorScheme.primary
+                                                            else -> MiuixTheme.colorScheme.onSurface
+                                                        },
+                                                    )
+                                                }
+                                                if (hasTx) {
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .padding(top = 1.dp)
+                                                            .size(4.dp)
+                                                            .clip(CircleShape)
+                                                            .background(
+                                                                if (isSelected) MiuixTheme.colorScheme.primary
+                                                                else MiuixTheme.colorScheme.primary.copy(alpha = 0.65f),
+                                                            ),
+                                                    )
+                                                }
                                             }
                                         }
                                     }
@@ -681,11 +757,30 @@ private fun FineGrainedDatePickerDialog(
                     }
                 }
 
+                HorizontalDivider()
+
+                // Quick scope bar: view whole month / whole year directly
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TextButton(
+                        text = "看整月",
+                        onClick = { onConfirm(StatsPeriodMode.MONTH, pickerYear, pickerMonth, pickerDay) },
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(
+                        text = "看全年",
+                        onClick = { onConfirm(StatsPeriodMode.YEAR, pickerYear, pickerMonth, pickerDay) },
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     TextButton(text = "取消", onClick = onDismiss, modifier = Modifier.weight(1f))
                     TextButton(
-                        text = "确定",
-                        onClick = { onConfirm(mode, pickerYear, pickerMonth, pickerDay) },
+                        text = "查看当日",
+                        onClick = { onConfirm(StatsPeriodMode.DAY, pickerYear, pickerMonth, pickerDay) },
                         colors = ButtonDefaults.textButtonColorsPrimary(),
                         modifier = Modifier.weight(1f),
                     )
