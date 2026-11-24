@@ -43,7 +43,6 @@ class PaymentAccessibilityService : AccessibilityService() {
         if (isAlipay && !settings.hookAlipay) return
         if (isWeChat && lsposedLive) return
         if (isAlipay && lsposedLive) return
-        if (!isWeChat && !isAlipay && !settings.listenOtherApps) return
 
         val now = System.currentTimeMillis()
         if (ev.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) {

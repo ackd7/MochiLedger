@@ -45,13 +45,6 @@ class AutoRecordReceiver : BroadcastReceiver() {
 
         if (pkg == PaymentChannel.WECHAT.packageName && !settings.hookWeChat) return
         if (pkg == PaymentChannel.ALIPAY.packageName && !settings.hookAlipay) return
-        if ((sourceTag == "NOTIFICATION" || sourceTag == "ACCESSIBILITY") &&
-            pkg != PaymentChannel.WECHAT.packageName &&
-            pkg != PaymentChannel.ALIPAY.packageName &&
-            !settings.listenOtherApps
-        ) {
-            return
-        }
 
         val recordSource = when {
             sourceTag == "ACCESSIBILITY" -> RecordSource.ACCESSIBILITY_SCREEN

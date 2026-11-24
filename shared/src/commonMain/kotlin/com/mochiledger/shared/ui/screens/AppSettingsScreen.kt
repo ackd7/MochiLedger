@@ -61,6 +61,7 @@ private enum class SettingsSubPage(val depth: Int) {
     MAIN(0),
     SYNC(1),
     AUTO_TRACK(1),
+    AUTO_TRACK_RULES(2),
     VERSION(1),
     CHANGELOG(2),
 }
@@ -84,6 +85,7 @@ fun AppSettingsScreen(
     PlatformBackHandler(enabled = subPage != SettingsSubPage.MAIN && subPage != SettingsSubPage.SYNC) {
         subPage = when (subPage) {
             SettingsSubPage.CHANGELOG -> SettingsSubPage.VERSION
+            SettingsSubPage.AUTO_TRACK_RULES -> SettingsSubPage.AUTO_TRACK
             else -> SettingsSubPage.MAIN
         }
     }
@@ -188,6 +190,18 @@ fun AppSettingsScreen(
                         onUpdateSettings = repository::updateAutoTrackSettings,
                         onParsePreview = { pkg, title, content -> repository.parsePaymentPreview(pkg, title, content) },
                         onRecordParsed = { parsed -> repository.recordParsedPayment(parsed) != null },
+                        onOpenRules = { subPage = SettingsSubPage.AUTO_TRACK_RULES },
+                        onShowMessage = onShowMessage,
+                        bottomInset = bottomInset,
+                    )
+                }
+            }
+
+            SettingsSubPage.AUTO_TRACK_RULES -> {
+                Column(modifier = Modifier.fillMaxSize()) {
+                    IconBackHeader("自定义分类规则") { subPage = SettingsSubPage.AUTO_TRACK }
+                    AutoTrackRulesScreen(
+                        state = state,
                         onSaveRule = repository::upsertRule,
                         onDeleteRule = repository::deleteRule,
                         onShowMessage = onShowMessage,

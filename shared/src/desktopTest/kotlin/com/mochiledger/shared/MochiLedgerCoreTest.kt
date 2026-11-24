@@ -352,6 +352,20 @@ class MochiLedgerCoreTest {
         assertEquals(2590L, paidWithDiscount.amountCents)
         assertEquals("麦当劳", paidWithDiscount.merchant)
 
+        // Any arbitrary third-party app with a suspected consumption notification is automatically recorded
+        val unknownAppOrder = PaymentMessageParser.parse(
+            packageName = "com.example.localbakery",
+            title = "烘焙坊小程序",
+            content = "下单成功，实付48.00元",
+            rules = rules,
+            accounts = accounts,
+            source = RecordSource.NOTIFICATION_LISTENER,
+            nowMillis = now + 5000,
+        )
+        assertNotNull(unknownAppOrder)
+        assertEquals(4800L, unknownAppOrder.amountCents)
+        assertEquals(PaymentChannel.OTHER_APP, unknownAppOrder.channel)
+
         // Personal friend chat in WeChat must be ignored
         val friendChat = PaymentMessageParser.parse(
             packageName = PaymentChannel.WECHAT.packageName,

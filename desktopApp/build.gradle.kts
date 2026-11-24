@@ -28,7 +28,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Exe, TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "MochiLedger"
-            packageVersion = "1.6.0"
+            packageVersion = "1.6.1"
             description = "墨记 MochiLedger — 跨端开源记账软件"
             vendor = "ackd7"
             modules("java.sql", "java.naming", "java.logging", "jdk.crypto.ec")

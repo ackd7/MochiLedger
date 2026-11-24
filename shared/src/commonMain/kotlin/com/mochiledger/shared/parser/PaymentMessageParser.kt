@@ -46,7 +46,10 @@ object PaymentMessageParser {
     )
 
     private val expenseKeywords = listOf(
-        "付款", "支付", "实付", "消费", "支出", "扣款", "已支付", "成功支付", "成功付款", "支付成功", "付款成功", "下单成功", "交易成功", "购买成功", "花呗", "自动扣费", "免密支付", "发出红包",
+        "付款", "支付", "实付", "消费", "支出", "扣款", "扣费", "代扣", "出账", "刷卡",
+        "已支付", "成功支付", "成功付款", "支付成功", "付款成功", "下单成功", "交易成功",
+        "购买成功", "充值成功", "续费成功", "缴费成功", "已扣款", "已下单",
+        "花呗", "自动扣费", "免密支付", "快捷支付", "扫码付款", "发出红包",
     )
 
     private val hardIgnoreKeywords = listOf(
@@ -121,14 +124,6 @@ object PaymentMessageParser {
         val suggestedAccountName = detectAccountName(fullText, channel)
         val matchedRule = matchRule("$fullText $productDetail", merchant, channel, rules)
         val fallbackCat = defaultCategoryFor(txType, "$fullText $productDetail ${channel.label}")
-
-        // For unknown generic apps (OTHER_APP), require matching an explicit user rule or known category rule
-        // so unrelated system/game/news notifications with numbers never pollute the ledger.
-        if (channel == PaymentChannel.OTHER_APP && matchedRule == null &&
-            (fallbackCat == "cat_other_exp" || fallbackCat == "cat_other_inc")
-        ) {
-            return null
-        }
 
         val resolvedAccountId = matchedRule?.targetAccountId
             ?: accounts.firstOrNull { !it.isDeleted && it.name.contains(suggestedAccountName, ignoreCase = true) }?.id

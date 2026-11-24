@@ -40,10 +40,9 @@ class PaymentNotificationListenerService : NotificationListenerService() {
         if (isWeChat && lsposedLive && settings.hookWeChat) return
         if (isAlipay && lsposedLive && settings.hookAlipay) return
 
-        // Respect per-app switches
+        // Respect per-app switches for WeChat/Alipay; all other apps are automatically monitored for suspected consumption
         if (isWeChat && !settings.hookWeChat) return
         if (isAlipay && !settings.hookAlipay) return
-        if (!isWeChat && !isAlipay && !settings.listenOtherApps) return
 
         val extras = statusBarNotif.notification?.extras ?: return
         val title = extras.getCharSequence(Notification.EXTRA_TITLE)?.toString().orEmpty()

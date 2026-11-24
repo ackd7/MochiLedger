@@ -256,7 +256,7 @@ data class ChangelogEntry(
 )
 
 object AppInfo {
-    const val VERSION_NAME = "1.6.0"
+    const val VERSION_NAME = "1.6.1"
     const val GITHUB_OWNER = "ackd7"
     const val GITHUB_REPO = "MochiLedger"
     const val GITHUB_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO"
@@ -264,6 +264,16 @@ object AppInfo {
     const val RELEASES_LATEST_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
 
     val CHANGELOG: List<ChangelogEntry> = listOf(
+        ChangelogEntry(
+            version = "v1.6.1",
+            title = "自动记录全应用疑似消费 · 开关缺权限自动引导跳转 · 完整权限检测 · 分类规则二级入口",
+            changes = listOf(
+                "移除「拓展识别多应用」多余开关：开启自动记账后自动识别所有应用的疑似消费与收支记录（参考 AutoAccounting / 钱迹 / 一木记账规则，支持充值/续费/缴费/代扣等消费动词并过滤验证码、优惠券与待付款）",
+                "开关权限主动提醒跳转：打开「启用自动记账」「启用无障碍识屏」「付款后悬浮确认条」时，若检测到尚未授予对应权限，自动提示并直接跳转到系统授权页面",
+                "「权限检测」面板完整列出软件所需的全部权限（通知使用权、无障碍服务、悬浮窗权限、后台电池优化、记账通知提醒及 LSPosed），一目了然查看哪项未开启",
+                "将手动添加与管理「自定义分类规则」收拢为独立二级页面入口（支持支出与收入规则分类），让自动记账主页更加清爽",
+            ),
+        ),
         ChangelogEntry(
             version = "v1.6.0",
             title = "无障碍实时识屏自动记账 · 通知栏记账融入基础开关自动开启",

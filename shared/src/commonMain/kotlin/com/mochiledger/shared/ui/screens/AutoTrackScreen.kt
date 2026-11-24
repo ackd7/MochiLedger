@@ -1,7 +1,6 @@
 package com.mochiledger.shared.ui.screens
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -11,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -51,6 +49,7 @@ import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
+import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -60,17 +59,13 @@ fun AutoTrackScreen(
     onUpdateSettings: (AutoTrackSettings) -> Unit,
     onParsePreview: (String?, String, String) -> ParsedPayment?,
     onRecordParsed: (ParsedPayment) -> Boolean,
-    onSaveRule: (AutoTrackRule) -> Unit,
-    onDeleteRule: (String) -> Unit,
+    onOpenRules: () -> Unit,
     onShowMessage: (String) -> Unit,
     bottomInset: Dp = 0.dp,
 ) {
     var runtime by remember { mutableStateOf(PlatformBridge.getAutoTrackRuntimeStatus()) }
     val settings = state.metadata.autoTrack
     val categoryMap = remember(state.categories) { state.categories.associateBy { it.id } }
-    val expenseCategories = remember(state.categories) {
-        state.activeCategories.filter { it.type == TransactionType.EXPENSE }
-    }
 
     // Auto-refresh permission status every 2s so returning from Android settings updates immediately
     LaunchedEffect(Unit) {
@@ -86,20 +81,15 @@ fun AutoTrackScreen(
     var simContent by remember { mutableStateOf("商户：瑞幸咖啡 商品：生椰拿铁大杯 付款方式：零钱 支付成功 ￥19.90") }
     var previewResult by remember { mutableStateOf<ParsedPayment?>(null) }
 
-    var newRuleName by remember { mutableStateOf("") }
-    var newRuleKeyword by remember { mutableStateOf("") }
-    var newRuleCategoryId by remember { mutableStateOf("cat_food") }
-
-    // Permission checks follow active switches:
-    // Notification listener is built-in whenever Auto-Track is enabled; Accessibility & LSPosed only checked when toggled on.
-    val missingPermissionsCount = if (runtime.supportsLsposed && settings.enabled) {
+    // Full permission inventory: display all permissions required by the app (plus LSPosed when enabled)
+    val missingPermissionsCount = if (runtime.supportsLsposed) {
         buildList {
             add(runtime.notificationListenerEnabled)
-            if (settings.useAccessibilityMode) add(runtime.accessibilityEnabled)
-            if (settings.useLsposedMode) add(runtime.lsposedActive)
-            if (settings.floatingConfirmEnabled) add(runtime.overlayPermissionGranted)
+            add(runtime.accessibilityEnabled)
+            add(runtime.overlayPermissionGranted)
             add(runtime.batteryOptimizationIgnored)
             add(runtime.postNotificationsGranted)
+            if (settings.useLsposedMode) add(runtime.lsposedActive)
         }.count { !it }
     } else {
         0
@@ -110,34 +100,49 @@ fun AutoTrackScreen(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp + bottomInset),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        // Master Switch (automatically enables Notification Listener) & Floating Confirm
+        // Master Switch (automatically records suspected consumption from all notifications) & Floating Confirm
         item(key = "master_switches") {
             SmallTitle(text = "基础设置")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     SwitchPreference(
                         title = "启用自动记账",
-                        summary = "开启即自动启用系统通知栏记账",
+                        summary = "开启后自动识别疑似消费与收支记录",
                         checked = settings.enabled,
                         onCheckedChange = { enable ->
-                            onUpdateSettings(settings.copy(enabled = enable, fallbackNotificationListener = true))
+                            onUpdateSettings(
+                                settings.copy(
+                                    enabled = enable,
+                                    fallbackNotificationListener = true,
+                                    listenOtherApps = true,
+                                ),
+                            )
+                            if (enable && runtime.supportsLsposed) {
+                                val latest = PlatformBridge.getAutoTrackRuntimeStatus()
+                                runtime = latest
+                                if (!latest.notificationListenerEnabled) {
+                                    onShowMessage("请开启「通知使用权」，以便自动读取疑似消费通知")
+                                    PlatformBridge.openNotificationListenerSettings()
+                                }
+                            }
                         },
                     )
-                    if (settings.enabled) {
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                        SwitchPreference(
-                            title = "拓展识别多应用",
-                            summary = "识别美团、京东、淘宝、拼多多、云闪付、银行及规则匹配应用",
-                            checked = settings.listenOtherApps,
-                            onCheckedChange = { onUpdateSettings(settings.copy(listenOtherApps = it)) },
-                        )
-                    }
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     SwitchPreference(
                         title = "付款后悬浮确认条",
                         summary = "顶部弹出快捷卡片，1 秒补全备注",
                         checked = settings.floatingConfirmEnabled,
-                        onCheckedChange = { onUpdateSettings(settings.copy(floatingConfirmEnabled = it)) },
+                        onCheckedChange = { enable ->
+                            onUpdateSettings(settings.copy(floatingConfirmEnabled = enable))
+                            if (enable && runtime.supportsLsposed) {
+                                val latest = PlatformBridge.getAutoTrackRuntimeStatus()
+                                runtime = latest
+                                if (!latest.overlayPermissionGranted) {
+                                    onShowMessage("请授予「悬浮窗权限」，付款后即可弹出快捷确认条")
+                                    PlatformBridge.openOverlayPermissionSettings()
+                                }
+                            }
+                        },
                     )
                     if (settings.floatingConfirmEnabled) {
                         Row(
@@ -159,7 +164,7 @@ fun AutoTrackScreen(
                 }
             }
             Text(
-                text = "提示：打开自动记账后默认自动监听通知栏记账，无需单独开启；自动过滤优惠券、待付款与物流提醒。",
+                text = "提示：打开自动记账后自动通过通知栏捕捉疑似消费并过滤验证码、优惠券与待付款提醒。",
                 fontSize = 11.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp),
@@ -173,16 +178,24 @@ fun AutoTrackScreen(
                 Column {
                     SwitchPreference(
                         title = "启用无障碍识屏",
-                        summary = "实时读取微信、支付宝、美团、京东等支付完成页自动记账",
+                        summary = "实时读取支付完成页屏幕信息自动记账",
                         checked = settings.useAccessibilityMode,
                         onCheckedChange = { enable ->
                             onUpdateSettings(settings.copy(useAccessibilityMode = enable))
+                            if (enable && runtime.supportsLsposed) {
+                                val latest = PlatformBridge.getAutoTrackRuntimeStatus()
+                                runtime = latest
+                                if (!latest.accessibilityEnabled) {
+                                    onShowMessage("请先开启「墨记无障碍识屏自动记账」（若置灰请先在应用详情允许受限设置）")
+                                    PlatformBridge.openAccessibilitySettings()
+                                }
+                            }
                         },
                     )
                 }
             }
             Text(
-                text = "提示：免 Root 增强方案，仅在检测到「支付成功/完成」结果页时触发，自动过滤历史账单列表、待支付收银台与聊天窗口。",
+                text = "提示：免 Root 增强通道，仅在检测到「支付成功/完成」页面时触发，自动跳过历史账单与聊天窗口。",
                 fontSize = 11.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp),
@@ -196,10 +209,17 @@ fun AutoTrackScreen(
                 Column {
                     SwitchPreference(
                         title = "启用 LSPosed 监听",
-                        summary = "深度读取微信/支付宝收银台收款人、商品明细与支付页",
+                        summary = "深度捕获收银台收款人与商品明细",
                         checked = settings.useLsposedMode,
                         onCheckedChange = { enable ->
                             onUpdateSettings(settings.copy(useLsposedMode = enable))
+                            if (enable && runtime.supportsLsposed) {
+                                val latest = PlatformBridge.getAutoTrackRuntimeStatus()
+                                runtime = latest
+                                if (!latest.lsposedActive) {
+                                    onShowMessage("检测到 LSPosed 模块尚未激活，请在 LSPosed 管理器中勾选并重启对应应用")
+                                }
+                            }
                         },
                     )
                     if (settings.useLsposedMode) {
@@ -228,11 +248,23 @@ fun AutoTrackScreen(
             )
         }
 
-        // Clean Permission Health Check (Android only; checks built-in notification listener + active enhancements)
-        if (runtime.supportsLsposed && settings.enabled) {
+        // Level-2 Entry for Custom Classification Rules
+        item(key = "rules_entry") {
+            SmallTitle(text = "分类规则")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                ArrowPreference(
+                    title = "自定义分类规则",
+                    summary = "已配置 ${state.activeRules.size} 条 · 手动添加关键词自动归类",
+                    onClick = onOpenRules,
+                )
+            }
+        }
+
+        // Complete Permission Health Check (Android: shows ALL permissions required by the app)
+        if (runtime.supportsLsposed) {
             item(key = "permission_health") {
                 SmallTitle(
-                    text = if (missingPermissionsCount == 0) "权限体检 · 已就绪" else "权限体检 · 缺 $missingPermissionsCount 项",
+                    text = if (missingPermissionsCount == 0) "权限检测 · 全部就绪" else "权限检测 · 缺 $missingPermissionsCount 项",
                 )
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(
@@ -241,45 +273,31 @@ fun AutoTrackScreen(
                     ) {
                         PermissionCheckRow(
                             title = "通知使用权",
-                            desc = if (runtime.notificationListenerEnabled) "已授权" else "需开启系统通知读取权限",
+                            desc = if (runtime.notificationListenerEnabled) "已授权" else "用于自动读取通知栏疑似消费",
                             granted = runtime.notificationListenerEnabled,
                             actionLabel = "去开启",
                             onAction = { PlatformBridge.openNotificationListenerSettings() },
                         )
-                        if (settings.useAccessibilityMode) {
-                            HorizontalDivider()
-                            PermissionCheckRow(
-                                title = "无障碍服务",
-                                desc = if (runtime.accessibilityEnabled) "已开启" else "开启墨记无障碍（若置灰请先在应用详情允许受限设置）",
-                                granted = runtime.accessibilityEnabled,
-                                actionLabel = "去开启",
-                                onAction = { PlatformBridge.openAccessibilitySettings() },
-                            )
-                        }
-                        if (settings.useLsposedMode) {
-                            HorizontalDivider()
-                            PermissionCheckRow(
-                                title = "LSPosed 模块",
-                                desc = if (runtime.lsposedActive) "已激活" else "请在 LSPosed 勾选微信与支付宝",
-                                granted = runtime.lsposedActive,
-                                actionLabel = null,
-                                onAction = {},
-                            )
-                        }
-                        if (settings.floatingConfirmEnabled) {
-                            HorizontalDivider()
-                            PermissionCheckRow(
-                                title = "悬浮窗权限",
-                                desc = if (runtime.overlayPermissionGranted) "已授权" else "用于付款后弹出快捷备注条",
-                                granted = runtime.overlayPermissionGranted,
-                                actionLabel = "去授权",
-                                onAction = { PlatformBridge.openOverlayPermissionSettings() },
-                            )
-                        }
+                        HorizontalDivider()
+                        PermissionCheckRow(
+                            title = "无障碍服务",
+                            desc = if (runtime.accessibilityEnabled) "已开启" else "用于实时识屏记账（若置灰请先允许受限设置）",
+                            granted = runtime.accessibilityEnabled,
+                            actionLabel = "去开启",
+                            onAction = { PlatformBridge.openAccessibilitySettings() },
+                        )
+                        HorizontalDivider()
+                        PermissionCheckRow(
+                            title = "悬浮窗权限",
+                            desc = if (runtime.overlayPermissionGranted) "已授权" else "用于付款后弹出快捷确认条",
+                            granted = runtime.overlayPermissionGranted,
+                            actionLabel = "去授权",
+                            onAction = { PlatformBridge.openOverlayPermissionSettings() },
+                        )
                         HorizontalDivider()
                         PermissionCheckRow(
                             title = "后台电池优化",
-                            desc = if (runtime.batteryOptimizationIgnored) "已加入白名单" else "建议设为无限制防杀后台",
+                            desc = if (runtime.batteryOptimizationIgnored) "已加入白名单" else "建议设为无限制防止后台被杀",
                             granted = runtime.batteryOptimizationIgnored,
                             actionLabel = "去设置",
                             onAction = { PlatformBridge.openBatteryOptimizationSettings() },
@@ -287,17 +305,27 @@ fun AutoTrackScreen(
                         HorizontalDivider()
                         PermissionCheckRow(
                             title = "记账通知提醒",
-                            desc = if (runtime.postNotificationsGranted) "已开启" else "用于推送自动记账结果",
+                            desc = if (runtime.postNotificationsGranted) "已开启" else "用于推送自动记账结果通知",
                             granted = runtime.postNotificationsGranted,
                             actionLabel = "去开启",
                             onAction = { PlatformBridge.openAppNotificationSettings() },
                         )
+                        if (settings.useLsposedMode) {
+                            HorizontalDivider()
+                            PermissionCheckRow(
+                                title = "LSPosed 模块",
+                                desc = if (runtime.lsposedActive) "已激活" else "请在 LSPosed 管理器勾选并重启应用",
+                                granted = runtime.lsposedActive,
+                                actionLabel = null,
+                                onAction = {},
+                            )
+                        }
                     }
                 }
             }
         }
 
-        // Interactive Payment Simulator (clean single-line buttons + horizontal scrollable examples)
+        // Interactive Payment Simulator
         item(key = "simulator") {
             SmallTitle(text = "解析测试")
             Card(modifier = Modifier.fillMaxWidth()) {
@@ -345,7 +373,7 @@ fun AutoTrackScreen(
                     TextField(
                         value = simContent,
                         onValueChange = { simContent = it },
-                        label = "支付内容",
+                        label = "通知正文",
                         modifier = Modifier.fillMaxWidth(),
                     )
 
@@ -400,12 +428,49 @@ fun AutoTrackScreen(
                 }
             }
         }
+    }
+}
 
-        // Auto Classification Rules (full-width inputs + horizontally scrollable category bar — zero awkward wrapping!)
-        item(key = "rules") {
-            SmallTitle(text = "智能分类规则")
+/**
+ * Dedicated Level-2 sub-page for manually creating and managing custom auto-classification rules.
+ */
+@Composable
+fun AutoTrackRulesScreen(
+    state: LedgerUiState,
+    onSaveRule: (AutoTrackRule) -> Unit,
+    onDeleteRule: (String) -> Unit,
+    onShowMessage: (String) -> Unit,
+    bottomInset: Dp = 0.dp,
+) {
+    val categoryMap = remember(state.categories) { state.categories.associateBy { it.id } }
+    var ruleTxType by remember { mutableStateOf(TransactionType.EXPENSE) }
+    val selectableCategories = remember(state.categories, ruleTxType) {
+        state.activeCategories.filter { it.type == ruleTxType }
+    }
+
+    var newRuleName by remember { mutableStateOf("") }
+    var newRuleKeyword by remember { mutableStateOf("") }
+    var newRuleCategoryId by remember(ruleTxType) {
+        mutableStateOf(selectableCategories.firstOrNull()?.id ?: "cat_food")
+    }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp + bottomInset),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item(key = "add_rule_card") {
+            SmallTitle(text = "新增分类规则")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        MochiChip("支出规则", ruleTxType == TransactionType.EXPENSE, MochiColors.Expense) {
+                            ruleTxType = TransactionType.EXPENSE
+                        }
+                        MochiChip("收入规则", ruleTxType == TransactionType.INCOME, MochiColors.Income) {
+                            ruleTxType = TransactionType.INCOME
+                        }
+                    }
                     TextField(
                         value = newRuleName,
                         onValueChange = { newRuleName = it },
@@ -422,7 +487,7 @@ fun AutoTrackScreen(
                         modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                     ) {
-                        expenseCategories.forEach { cat ->
+                        selectableCategories.forEach { cat ->
                             MochiChip(cat.name, newRuleCategoryId == cat.id, Color(cat.colorHex)) {
                                 newRuleCategoryId = cat.id
                             }
@@ -431,7 +496,10 @@ fun AutoTrackScreen(
                     TextButton(
                         text = "添加规则",
                         onClick = {
-                            if (newRuleName.isBlank() || newRuleKeyword.isBlank()) return@TextButton
+                            if (newRuleName.isBlank() || newRuleKeyword.isBlank()) {
+                                onShowMessage("请填写规则名称与关键词")
+                                return@TextButton
+                            }
                             onSaveRule(
                                 AutoTrackRule(
                                     id = "",
@@ -447,9 +515,21 @@ fun AutoTrackScreen(
                         colors = ButtonDefaults.textButtonColorsPrimary(),
                         modifier = Modifier.fillMaxWidth(),
                     )
+                }
+            }
+        }
 
-                    if (state.activeRules.isNotEmpty()) {
-                        HorizontalDivider()
+        item(key = "rule_list") {
+            SmallTitle(text = "已生效规则（${state.activeRules.size}）")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (state.activeRules.isEmpty()) {
+                        Text(
+                            text = "暂无自定义规则，在上方添加关键词即可自动归类",
+                            fontSize = 13.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    } else {
                         state.activeRules.forEachIndexed { idx, rule ->
                             Row(
                                 modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
