@@ -90,11 +90,13 @@ fun AutoTrackScreen(
     var newRuleKeyword by remember { mutableStateOf("") }
     var newRuleCategoryId by remember { mutableStateOf("cat_food") }
 
-    // Only check LSPosed permission when LSPosed scheme is enabled; only check NotificationListener when notification listener is enabled
-    val missingPermissionsCount = if (runtime.supportsLsposed) {
+    // Permission checks follow active switches:
+    // Notification listener is built-in whenever Auto-Track is enabled; Accessibility & LSPosed only checked when toggled on.
+    val missingPermissionsCount = if (runtime.supportsLsposed && settings.enabled) {
         buildList {
+            add(runtime.notificationListenerEnabled)
+            if (settings.useAccessibilityMode) add(runtime.accessibilityEnabled)
             if (settings.useLsposedMode) add(runtime.lsposedActive)
-            if (settings.fallbackNotificationListener) add(runtime.notificationListenerEnabled)
             if (settings.floatingConfirmEnabled) add(runtime.overlayPermissionGranted)
             add(runtime.batteryOptimizationIgnored)
             add(runtime.postNotificationsGranted)
@@ -108,17 +110,28 @@ fun AutoTrackScreen(
         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp + bottomInset),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        // Master Switch & Floating Confirm
+        // Master Switch (automatically enables Notification Listener) & Floating Confirm
         item(key = "master_switches") {
             SmallTitle(text = "基础设置")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     SwitchPreference(
                         title = "启用自动记账",
-                        summary = "开启后自动识别微信、支付宝及多应用订单通知",
+                        summary = "开启即自动启用系统通知栏记账",
                         checked = settings.enabled,
-                        onCheckedChange = { onUpdateSettings(settings.copy(enabled = it)) },
+                        onCheckedChange = { enable ->
+                            onUpdateSettings(settings.copy(enabled = enable, fallbackNotificationListener = true))
+                        },
                     )
+                    if (settings.enabled) {
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        SwitchPreference(
+                            title = "拓展识别多应用",
+                            summary = "识别美团、京东、淘宝、拼多多、云闪付、银行及规则匹配应用",
+                            checked = settings.listenOtherApps,
+                            onCheckedChange = { onUpdateSettings(settings.copy(listenOtherApps = it)) },
+                        )
+                    }
                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                     SwitchPreference(
                         title = "付款后悬浮确认条",
@@ -145,11 +158,40 @@ fun AutoTrackScreen(
                     }
                 }
             }
+            Text(
+                text = "提示：打开自动记账后默认自动监听通知栏记账，无需单独开启；自动过滤优惠券、待付款与物流提醒。",
+                fontSize = 11.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp),
+            )
         }
 
-        // Scheme 1: Root / LSPosed (can run standalone or alongside Notification Listener)
+        // Enhanced Scheme 1: Real-time Accessibility Screen Reader (No Root)
+        item(key = "scheme_accessibility") {
+            SmallTitle(text = "无障碍识屏增强")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column {
+                    SwitchPreference(
+                        title = "启用无障碍识屏",
+                        summary = "实时读取微信、支付宝、美团、京东等支付完成页自动记账",
+                        checked = settings.useAccessibilityMode,
+                        onCheckedChange = { enable ->
+                            onUpdateSettings(settings.copy(useAccessibilityMode = enable))
+                        },
+                    )
+                }
+            }
+            Text(
+                text = "提示：免 Root 增强方案，仅在检测到「支付成功/完成」结果页时触发，自动过滤历史账单列表、待支付收银台与聊天窗口。",
+                fontSize = 11.sp,
+                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp),
+            )
+        }
+
+        // Enhanced Scheme 2: Root / LSPosed
         item(key = "scheme_lsposed") {
-            SmallTitle(text = "Root / LSPosed 方案")
+            SmallTitle(text = "Root / LSPosed 增强")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     SwitchPreference(
@@ -179,47 +221,15 @@ fun AutoTrackScreen(
                 }
             }
             Text(
-                text = "提示：可与下方「系统通知监听」同时开启（同笔订单自动去重并互补商品明细），也可搭配悬浮确认条与账单 CSV 补全。",
+                text = "提示：与默认通知栏及无障碍识屏互不冲突（20 秒内同笔交易自动去重并互补明细）；开启 LSPosed 后一般无需再开无障碍。",
                 fontSize = 11.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp),
             )
         }
 
-        // Scheme 2: Full-App Notification Listener (supports Meituan, JD, Taobao, UnionPay, Bank SMS & rule-matched apps)
-        item(key = "scheme_regular") {
-            SmallTitle(text = "系统通知监听（支持全应用）")
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column {
-                    SwitchPreference(
-                        title = "启用系统通知监听",
-                        summary = "免 Root 读取通知记账，支持与 LSPosed 协同开启",
-                        checked = settings.fallbackNotificationListener,
-                        onCheckedChange = { enable ->
-                            onUpdateSettings(settings.copy(fallbackNotificationListener = enable))
-                        },
-                    )
-                    if (settings.fallbackNotificationListener) {
-                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
-                        SwitchPreference(
-                            title = "拓展监听其他应用",
-                            summary = "识别美团、京东、淘宝、拼多多、云闪付、银行及符合分类规则的应用通知",
-                            checked = settings.listenOtherApps,
-                            onCheckedChange = { onUpdateSettings(settings.copy(listenOtherApps = it)) },
-                        )
-                    }
-                }
-            }
-            Text(
-                text = "提示：自动过滤优惠券、待付款与取餐快递提醒；未知第三方应用仅在命中下方分类规则时入账。",
-                fontSize = 11.sp,
-                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp),
-            )
-        }
-
-        // Clean Permission Health Check (Android only; only checks permissions relevant to enabled schemes)
-        if (runtime.supportsLsposed) {
+        // Clean Permission Health Check (Android only; checks built-in notification listener + active enhancements)
+        if (runtime.supportsLsposed && settings.enabled) {
             item(key = "permission_health") {
                 SmallTitle(
                     text = if (missingPermissionsCount == 0) "权限体检 · 已就绪" else "权限体检 · 缺 $missingPermissionsCount 项",
@@ -229,8 +239,25 @@ fun AutoTrackScreen(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(10.dp),
                     ) {
-                        var hasPrevRow = false
+                        PermissionCheckRow(
+                            title = "通知使用权",
+                            desc = if (runtime.notificationListenerEnabled) "已授权" else "需开启系统通知读取权限",
+                            granted = runtime.notificationListenerEnabled,
+                            actionLabel = "去开启",
+                            onAction = { PlatformBridge.openNotificationListenerSettings() },
+                        )
+                        if (settings.useAccessibilityMode) {
+                            HorizontalDivider()
+                            PermissionCheckRow(
+                                title = "无障碍服务",
+                                desc = if (runtime.accessibilityEnabled) "已开启" else "开启墨记无障碍（若置灰请先在应用详情允许受限设置）",
+                                granted = runtime.accessibilityEnabled,
+                                actionLabel = "去开启",
+                                onAction = { PlatformBridge.openAccessibilitySettings() },
+                            )
+                        }
                         if (settings.useLsposedMode) {
+                            HorizontalDivider()
                             PermissionCheckRow(
                                 title = "LSPosed 模块",
                                 desc = if (runtime.lsposedActive) "已激活" else "请在 LSPosed 勾选微信与支付宝",
@@ -238,21 +265,9 @@ fun AutoTrackScreen(
                                 actionLabel = null,
                                 onAction = {},
                             )
-                            hasPrevRow = true
-                        }
-                        if (settings.fallbackNotificationListener) {
-                            if (hasPrevRow) HorizontalDivider()
-                            PermissionCheckRow(
-                                title = "通知使用权",
-                                desc = if (runtime.notificationListenerEnabled) "已授权" else "需开启系统通知读取权限",
-                                granted = runtime.notificationListenerEnabled,
-                                actionLabel = "去开启",
-                                onAction = { PlatformBridge.openNotificationListenerSettings() },
-                            )
-                            hasPrevRow = true
                         }
                         if (settings.floatingConfirmEnabled) {
-                            if (hasPrevRow) HorizontalDivider()
+                            HorizontalDivider()
                             PermissionCheckRow(
                                 title = "悬浮窗权限",
                                 desc = if (runtime.overlayPermissionGranted) "已授权" else "用于付款后弹出快捷备注条",
@@ -260,9 +275,8 @@ fun AutoTrackScreen(
                                 actionLabel = "去授权",
                                 onAction = { PlatformBridge.openOverlayPermissionSettings() },
                             )
-                            hasPrevRow = true
                         }
-                        if (hasPrevRow) HorizontalDivider()
+                        HorizontalDivider()
                         PermissionCheckRow(
                             title = "后台电池优化",
                             desc = if (runtime.batteryOptimizationIgnored) "已加入白名单" else "建议设为无限制防杀后台",

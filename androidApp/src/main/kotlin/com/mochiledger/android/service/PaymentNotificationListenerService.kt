@@ -11,13 +11,12 @@ import com.mochiledger.android.xposed.XposedStatus
 import com.mochiledger.shared.model.PaymentChannel
 
 /**
- * Full-app notification listener for MochiLedger.
+ * Built-in full-app notification listener for MochiLedger.
  *
- * Supports two modes seamlessly:
- * 1. Standalone non-root mode: captures WeChat, Alipay, Meituan, JD, Taobao, UnionPay, Bank SMS & rule-matched apps.
- * 2. Cooperative mode alongside LSPosed: automatically hands off WeChat/Alipay to LSPosed when active,
- *    while continuing to capture Meituan, JD, Taobao, Bank apps, and other rule-matched notifications
- *    with smart cross-app deduplication & detail enrichment in LedgerRepository.
+ * Automatically active whenever Auto-Track (`settings.enabled`) is turned on:
+ * - Captures WeChat, Alipay, Meituan, JD, Taobao, UnionPay, Bank SMS & rule-matched apps.
+ * - Automatically hands off WeChat/Alipay to LSPosed when LSPosed is actively running,
+ *   while continuing to capture third-party order notifications for deduplication & enrichment.
  */
 class PaymentNotificationListenerService : NotificationListenerService() {
 
@@ -28,14 +27,16 @@ class PaymentNotificationListenerService : NotificationListenerService() {
         val pkg = statusBarNotif.packageName ?: return
         if (pkg == packageName || pkg == "android" || pkg.startsWith("com.android.systemui")) return
 
-        val settings = MochiApplication.instance.repository.state.value.metadata.autoTrack
-        if (!settings.enabled || !settings.fallbackNotificationListener) return
+        val app = runCatching { MochiApplication.instance }.getOrNull() ?: return
+        val settings = app.repository.state.value.metadata.autoTrack
+        // Notification reading is automatically enabled whenever Auto-Track master switch is on
+        if (!settings.enabled) return
 
         val isWeChat = pkg == PaymentChannel.WECHAT.packageName
         val isAlipay = pkg == PaymentChannel.ALIPAY.packageName
         val lsposedLive = settings.useLsposedMode && XposedStatus.isModuleActive()
 
-        // Smart handoff: if LSPosed is actively hooking WeChat/Alipay, avoid duplicate broadcast from NotificationListener
+        // Smart handoff: if LSPosed is actively hooking WeChat/Alipay, avoid duplicate broadcast
         if (isWeChat && lsposedLive && settings.hookWeChat) return
         if (isAlipay && lsposedLive && settings.hookAlipay) return
 

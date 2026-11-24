@@ -14,6 +14,7 @@ import com.mochiledger.shared.model.TransactionType
 import com.mochiledger.shared.model.WebDavConfig
 import com.mochiledger.shared.parser.BillStatementImporter
 import com.mochiledger.shared.parser.PaymentMessageParser
+import com.mochiledger.shared.parser.ScreenNodeExtractor
 import com.mochiledger.shared.sync.LedgerJson
 import com.mochiledger.shared.sync.LedgerMerger
 import kotlinx.serialization.encodeToString
@@ -373,5 +374,77 @@ class MochiLedgerCoreTest {
                 dedupeWindowSeconds = 20,
             ),
         )
+    }
+
+    @Test
+    fun accessibilityScreenExtractorCapturesResultAndBlocksHistoryOrPrePay() {
+        // 1. WeChat Pay result screen with split currency & fraction TextViews + positional merchant
+        val wechatScreen = ScreenNodeExtractor.synthesizePaymentPayload(
+            packageName = PaymentChannel.WECHAT.packageName,
+            nodeTexts = listOf("支付成功", "星巴克咖啡", "￥", "32", ".00", "付款方式", "招商银行储蓄卡(8888)", "完成"),
+            nowMillis = now,
+        )
+        assertNotNull(wechatScreen)
+        val parsedWeChat = PaymentMessageParser.parse(
+            packageName = PaymentChannel.WECHAT.packageName,
+            title = wechatScreen.title,
+            content = wechatScreen.content,
+            rules = rules,
+            accounts = accounts,
+            source = RecordSource.ACCESSIBILITY_SCREEN,
+            nowMillis = now,
+        )
+        assertNotNull(parsedWeChat)
+        assertEquals(3200L, parsedWeChat.amountCents)
+        assertEquals("星巴克咖啡", parsedWeChat.merchant)
+        assertEquals("cat_food", parsedWeChat.suggestedCategoryId)
+        assertEquals("招商银行", parsedWeChat.suggestedAccountName)
+        assertEquals(RecordSource.ACCESSIBILITY_SCREEN, parsedWeChat.source)
+
+        // 2. Alipay result screen with labeled payee & product detail
+        val alipayScreen = ScreenNodeExtractor.synthesizePaymentPayload(
+            packageName = PaymentChannel.ALIPAY.packageName,
+            nodeTexts = listOf("付款成功", "¥", "24.80", "收款方", "喜茶GO", "商品说明", "多肉葡萄少冰", "付款方式", "花呗", "返回商家"),
+            nowMillis = now + 1000L,
+        )
+        assertNotNull(alipayScreen)
+        val parsedAlipay = PaymentMessageParser.parse(
+            packageName = PaymentChannel.ALIPAY.packageName,
+            title = alipayScreen.title,
+            content = alipayScreen.content,
+            rules = rules,
+            accounts = accounts,
+            source = RecordSource.ACCESSIBILITY_SCREEN,
+            nowMillis = now + 1000L,
+        )
+        assertNotNull(parsedAlipay)
+        assertEquals(2480L, parsedAlipay.amountCents)
+        assertEquals("喜茶GO", parsedAlipay.merchant)
+        assertTrue(parsedAlipay.note.contains("多肉葡萄少冰"))
+        assertEquals("花呗", parsedAlipay.suggestedAccountName)
+
+        // 3. Pre-payment cashier / password dialog MUST be blocked
+        val prePay = ScreenNodeExtractor.synthesizePaymentPayload(
+            packageName = PaymentChannel.WECHAT.packageName,
+            nodeTexts = listOf("瑞幸咖啡", "￥19.90", "请输入支付密码", "使用密码"),
+            nowMillis = now,
+        )
+        assertNull(prePay)
+
+        // 4. Order history list MUST be blocked
+        val orderList = ScreenNodeExtractor.synthesizePaymentPayload(
+            packageName = "com.jingdong.app.mall",
+            nodeTexts = listOf("全部订单", "待付款", "待收货", "待评价", "交易成功", "¥199.00"),
+            nowMillis = now,
+        )
+        assertNull(orderList)
+
+        // 5. Historical bill detail page with stale timestamp MUST be blocked
+        val oldDetail = ScreenNodeExtractor.synthesizePaymentPayload(
+            packageName = PaymentChannel.WECHAT.packageName,
+            nodeTexts = listOf("账单详情", "瑞幸咖啡", "¥19.90", "当前状态", "支付成功", "支付时间", "2024-05-01 09:15:00"),
+            nowMillis = now,
+        )
+        assertNull(oldDetail)
     }
 }

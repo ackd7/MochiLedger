@@ -324,6 +324,8 @@ actual object PlatformBridge {
 
     actual fun openNotificationListenerSettings(): Boolean = false
 
+    actual fun openAccessibilitySettings(): Boolean = false
+
     actual fun openOverlayPermissionSettings(): Boolean = false
 
     actual fun openBatteryOptimizationSettings(): Boolean = false

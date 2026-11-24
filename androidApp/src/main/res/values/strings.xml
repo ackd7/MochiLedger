@@ -3,4 +3,6 @@
     <string name="app_name">墨记 MochiLedger</string>
     <string name="xposed_description">墨记自动记账 LSPosed 模块：监听微信与支付宝支付通知及收付款事件，自动记录账单。</string>
     <string name="notification_listener_label">墨记自动记账通知监听</string>
+    <string name="accessibility_service_label">墨记无障碍识屏自动记账</string>
+    <string name="accessibility_service_description">在检测到微信、支付宝、云闪付、美团、京东等支付成功页面时，自动提取金额与商户完成记账。不读取密码或聊天隐私，自动跳过历史账单列表。</string>
 </resources>

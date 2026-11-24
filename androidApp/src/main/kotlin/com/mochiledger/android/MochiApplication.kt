@@ -21,6 +21,7 @@ class MochiApplication : Application() {
         AndroidPlatformContext.appContext = applicationContext
         AndroidPlatformContext.lsposedActiveProvider = { XposedStatus.isModuleActive() }
         AndroidPlatformContext.notificationListenerChecker = { isNotificationListenerEnabled() }
+        AndroidPlatformContext.accessibilityChecker = { isAccessibilityServiceEnabled() }
 
         repository = LedgerRepository()
         createNotificationChannel()
@@ -29,6 +30,15 @@ class MochiApplication : Application() {
     private fun isNotificationListenerEnabled(): Boolean {
         val enabled = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: return false
         return enabled.contains(packageName)
+    }
+
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val enabled = Settings.Secure.getString(
+            contentResolver,
+            Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES,
+        ) ?: return false
+        return enabled.contains("$packageName/com.mochiledger.android.service.PaymentAccessibilityService") ||
+            enabled.contains("$packageName/.service.PaymentAccessibilityService")
     }
 
     private fun createNotificationChannel() {

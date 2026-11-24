@@ -12,8 +12,10 @@ import com.mochiledger.shared.model.RecordSource
 import com.mochiledger.shared.model.formatCents
 
 /**
- * Receives structured payment events broadcast by MochiXposedEntry (LSPosed) or NotificationListenerService,
- * parses them with the shared PaymentMessageParser, deduplicates, persists into SQLite, and notifies the user.
+ * Receives structured payment events broadcast by:
+ * 1. Built-in NotificationListenerService ("NOTIFICATION") — active automatically whenever Auto-Track is on
+ * 2. PaymentAccessibilityService ("ACCESSIBILITY") — real-time screen reader
+ * 3. MochiXposedEntry ("LSPOSED" / default) — Root/LSPosed deep hooks
  */
 class AutoRecordReceiver : BroadcastReceiver() {
 
@@ -28,11 +30,22 @@ class AutoRecordReceiver : BroadcastReceiver() {
         val repo = MochiApplication.instance.repository
         val settings = repo.state.value.metadata.autoTrack
         if (!settings.enabled) return
-        if (sourceTag != "NOTIFICATION" && !settings.useLsposedMode) return
-        if (sourceTag == "NOTIFICATION" && !settings.fallbackNotificationListener) return
+
+        when (sourceTag) {
+            "NOTIFICATION" -> {
+                // Built-in notification listener is automatically active whenever settings.enabled is true
+            }
+            "ACCESSIBILITY" -> {
+                if (!settings.useAccessibilityMode) return
+            }
+            else -> {
+                if (!settings.useLsposedMode) return
+            }
+        }
+
         if (pkg == PaymentChannel.WECHAT.packageName && !settings.hookWeChat) return
         if (pkg == PaymentChannel.ALIPAY.packageName && !settings.hookAlipay) return
-        if (sourceTag == "NOTIFICATION" &&
+        if ((sourceTag == "NOTIFICATION" || sourceTag == "ACCESSIBILITY") &&
             pkg != PaymentChannel.WECHAT.packageName &&
             pkg != PaymentChannel.ALIPAY.packageName &&
             !settings.listenOtherApps
@@ -41,6 +54,7 @@ class AutoRecordReceiver : BroadcastReceiver() {
         }
 
         val recordSource = when {
+            sourceTag == "ACCESSIBILITY" -> RecordSource.ACCESSIBILITY_SCREEN
             sourceTag == "NOTIFICATION" -> RecordSource.NOTIFICATION_LISTENER
             pkg == PaymentChannel.WECHAT.packageName -> RecordSource.WECHAT_LSPOSED
             pkg == PaymentChannel.ALIPAY.packageName -> RecordSource.ALIPAY_LSPOSED

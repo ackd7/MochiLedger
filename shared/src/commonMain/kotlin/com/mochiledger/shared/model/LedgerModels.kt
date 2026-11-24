@@ -24,6 +24,7 @@ enum class RecordSource(val label: String) {
     WECHAT_LSPOSED("LSPosed · 微信"),
     ALIPAY_LSPOSED("LSPosed · 支付宝"),
     NOTIFICATION_LISTENER("系统通知监听"),
+    ACCESSIBILITY_SCREEN("无障碍识屏"),
     IMPORT("账单导入"),
 }
 
@@ -133,7 +134,8 @@ data class SelfHostedSyncConfig(
 @Serializable
 data class AutoTrackSettings(
     val enabled: Boolean = true,
-    val useLsposedMode: Boolean = true,
+    val useLsposedMode: Boolean = false,
+    val useAccessibilityMode: Boolean = false,
     val hookWeChat: Boolean = true,
     val hookAlipay: Boolean = true,
     val fallbackNotificationListener: Boolean = true,
@@ -254,7 +256,7 @@ data class ChangelogEntry(
 )
 
 object AppInfo {
-    const val VERSION_NAME = "1.5.0"
+    const val VERSION_NAME = "1.6.0"
     const val GITHUB_OWNER = "ackd7"
     const val GITHUB_REPO = "MochiLedger"
     const val GITHUB_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO"
@@ -262,6 +264,15 @@ object AppInfo {
     const val RELEASES_LATEST_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
 
     val CHANGELOG: List<ChangelogEntry> = listOf(
+        ChangelogEntry(
+            version = "v1.6.0",
+            title = "无障碍实时识屏自动记账 · 通知栏记账融入基础开关自动开启",
+            changes = listOf(
+                "新增「无障碍识屏自动记账」：实时读取微信、支付宝、云闪付、美团、京东、淘宝等支付完成页屏幕信息提取商户、商品、付款方式与实付金额，支持合并拆分金额节点并智能拦截历史账单列表、待支付收银台与聊天窗口",
+                "精简自动记账架构：读取系统通知栏记账融入「启用自动记账」总开关并默认随总开关自动开启，不再作为独立方案单独开关",
+                "支持「默认通知栏 + 无障碍识屏 + Root/LSPosed」多通道协同运行，20 秒窗口内同笔交易自动去重并互相补全商户与商品明细；权限体检新增无障碍服务检测与一键跳转授权",
+            ),
+        ),
         ChangelogEntry(
             version = "v1.5.0",
             title = "手动记账自由选时间 · 全应用通知规则记账（美团/京东/云闪付/银行等）· LSPosed 与通知监听协同共开",

@@ -17,10 +17,11 @@ data class AutoTrackRuntimeStatus(
     val supportsLsposed: Boolean,
     val lsposedActive: Boolean,
     val notificationListenerEnabled: Boolean,
+    val accessibilityEnabled: Boolean = false,
     val overlayPermissionGranted: Boolean = false,
     val batteryOptimizationIgnored: Boolean = false,
     val postNotificationsGranted: Boolean = true,
-    val hookVersion: String = "1.2.0",
+    val hookVersion: String = "1.6.0",
 )
 
 interface LedgerDatabaseDriver {
@@ -51,6 +52,7 @@ expect object PlatformBridge {
     ): HttpResponseData
     fun getAutoTrackRuntimeStatus(): AutoTrackRuntimeStatus
     fun openNotificationListenerSettings(): Boolean
+    fun openAccessibilitySettings(): Boolean
     fun openOverlayPermissionSettings(): Boolean
     fun openBatteryOptimizationSettings(): Boolean
     fun openAppNotificationSettings(): Boolean

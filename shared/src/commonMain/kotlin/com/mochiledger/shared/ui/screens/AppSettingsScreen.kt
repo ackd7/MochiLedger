@@ -356,7 +356,7 @@ fun AppSettingsScreen(
                                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                                     ArrowPreference(
                                         title = "自动记账",
-                                        summary = "微信与支付宝自动识别、权限体检与分类规则",
+                                        summary = "通知栏、无障碍识屏、LSPosed 与分类规则",
                                         onClick = { subPage = SettingsSubPage.AUTO_TRACK },
                                     )
                                 }

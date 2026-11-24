@@ -35,6 +35,9 @@ object AndroidPlatformContext {
     var notificationListenerChecker: () -> Boolean = { false }
 
     @Volatile
+    var accessibilityChecker: () -> Boolean = { false }
+
+    @Volatile
     var openBackupFilePicker: (((Result<Pair<String, String>>) -> Unit) -> Unit)? = null
 
     @Volatile
@@ -353,6 +356,7 @@ actual object PlatformBridge {
             supportsLsposed = true,
             lsposedActive = AndroidPlatformContext.lsposedActiveProvider(),
             notificationListenerEnabled = AndroidPlatformContext.notificationListenerChecker(),
+            accessibilityEnabled = AndroidPlatformContext.accessibilityChecker(),
             overlayPermissionGranted = overlayGranted,
             batteryOptimizationIgnored = batteryIgnored,
             postNotificationsGranted = postNotificationsGranted,
@@ -363,6 +367,17 @@ actual object PlatformBridge {
         val ctx = AndroidPlatformContext.appContext ?: return false
         return runCatching {
             val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            ctx.startActivity(intent)
+            true
+        }.getOrDefault(false)
+    }
+
+    actual fun openAccessibilitySettings(): Boolean {
+        val ctx = AndroidPlatformContext.appContext ?: return false
+        return runCatching {
+            val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS).apply {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             ctx.startActivity(intent)

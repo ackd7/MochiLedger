@@ -66,7 +66,7 @@
             </intent-filter>
         </receiver>
 
-        <!-- Fallback NotificationListenerService for non-LSPosed / non-root devices -->
+        <!-- Built-in NotificationListenerService (automatically active when Auto-Track is enabled) -->
         <service
             android:name=".service.PaymentNotificationListenerService"
             android:label="@string/notification_listener_label"
@@ -75,6 +75,20 @@
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />
             </intent-filter>
+        </service>
+
+        <!-- Real-time Accessibility screen reader for payment result pages -->
+        <service
+            android:name=".service.PaymentAccessibilityService"
+            android:label="@string/accessibility_service_label"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/payment_accessibility_service" />
         </service>
     </application>
 </manifest>
