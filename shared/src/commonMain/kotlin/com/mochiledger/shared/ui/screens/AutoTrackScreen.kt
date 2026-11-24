@@ -39,17 +39,16 @@ import com.mochiledger.shared.model.formatCents
 import com.mochiledger.shared.platform.PlatformBridge
 import com.mochiledger.shared.ui.components.MochiChip
 import com.mochiledger.shared.ui.components.MochiGlassBadge
+import com.mochiledger.shared.ui.components.MochiSectionHeader
 import com.mochiledger.shared.ui.theme.MochiColors
 import com.mochiledger.shared.ui.theme.mochiShape
 import kotlinx.coroutines.delay
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
 import top.yukonga.miuix.kmp.basic.HorizontalDivider
-import top.yukonga.miuix.kmp.basic.SmallTitle
 import top.yukonga.miuix.kmp.basic.Text
 import top.yukonga.miuix.kmp.basic.TextButton
 import top.yukonga.miuix.kmp.basic.TextField
-import top.yukonga.miuix.kmp.preference.ArrowPreference
 import top.yukonga.miuix.kmp.preference.SwitchPreference
 import top.yukonga.miuix.kmp.theme.MiuixTheme
 
@@ -57,15 +56,11 @@ import top.yukonga.miuix.kmp.theme.MiuixTheme
 fun AutoTrackScreen(
     state: LedgerUiState,
     onUpdateSettings: (AutoTrackSettings) -> Unit,
-    onParsePreview: (String?, String, String) -> ParsedPayment?,
-    onRecordParsed: (ParsedPayment) -> Boolean,
-    onOpenRules: () -> Unit,
     onShowMessage: (String) -> Unit,
     bottomInset: Dp = 0.dp,
 ) {
     var runtime by remember { mutableStateOf(PlatformBridge.getAutoTrackRuntimeStatus()) }
     val settings = state.metadata.autoTrack
-    val categoryMap = remember(state.categories) { state.categories.associateBy { it.id } }
 
     // Auto-refresh permission status every 2s so returning from Android settings updates immediately
     LaunchedEffect(Unit) {
@@ -75,11 +70,6 @@ fun AutoTrackScreen(
             runtime = PlatformBridge.getAutoTrackRuntimeStatus()
         }
     }
-
-    var simChannel by remember { mutableStateOf(PaymentChannel.WECHAT) }
-    var simTitle by remember { mutableStateOf("微信支付") }
-    var simContent by remember { mutableStateOf("商户：瑞幸咖啡 商品：生椰拿铁大杯 付款方式：零钱 支付成功 ￥19.90") }
-    var previewResult by remember { mutableStateOf<ParsedPayment?>(null) }
 
     // Full permission inventory: display all permissions required by the app (plus LSPosed when enabled)
     val missingPermissionsCount = if (runtime.supportsLsposed) {
@@ -102,7 +92,7 @@ fun AutoTrackScreen(
     ) {
         // Master Switch (automatically records suspected consumption from all notifications) & Floating Confirm
         item(key = "master_switches") {
-            SmallTitle(text = "基础设置")
+            MochiSectionHeader(title = "基础设置")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     SwitchPreference(
@@ -173,7 +163,7 @@ fun AutoTrackScreen(
 
         // Enhanced Scheme 1: Real-time Accessibility Screen Reader (No Root)
         item(key = "scheme_accessibility") {
-            SmallTitle(text = "无障碍识屏增强")
+            MochiSectionHeader(title = "无障碍识屏增强")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     SwitchPreference(
@@ -204,7 +194,7 @@ fun AutoTrackScreen(
 
         // Enhanced Scheme 2: Root / LSPosed
         item(key = "scheme_lsposed") {
-            SmallTitle(text = "Root / LSPosed 增强")
+            MochiSectionHeader(title = "Root / LSPosed 增强")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     SwitchPreference(
@@ -248,23 +238,12 @@ fun AutoTrackScreen(
             )
         }
 
-        // Level-2 Entry for Custom Classification Rules
-        item(key = "rules_entry") {
-            SmallTitle(text = "分类规则")
-            Card(modifier = Modifier.fillMaxWidth()) {
-                ArrowPreference(
-                    title = "自定义分类规则",
-                    summary = "已配置 ${state.activeRules.size} 条 · 手动添加关键词自动归类",
-                    onClick = onOpenRules,
-                )
-            }
-        }
-
         // Complete Permission Health Check (Android: shows ALL permissions required by the app)
         if (runtime.supportsLsposed) {
             item(key = "permission_health") {
-                SmallTitle(
-                    text = if (missingPermissionsCount == 0) "权限检测 · 全部就绪" else "权限检测 · 缺 $missingPermissionsCount 项",
+                MochiSectionHeader(
+                    title = if (missingPermissionsCount == 0) "权限检测 · 全部就绪" else "权限检测 · 缺 $missingPermissionsCount 项",
+                    accentColor = if (missingPermissionsCount == 0) MochiColors.Income else MochiColors.Expense,
                 )
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(
@@ -324,10 +303,157 @@ fun AutoTrackScreen(
                 }
             }
         }
+    }
+}
 
-        // Interactive Payment Simulator
+/**
+ * Dedicated Settings Level-2 sub-page combining Custom Classification Rules & Payment Parser Simulator.
+ */
+@Composable
+fun RulesAndTestScreen(
+    state: LedgerUiState,
+    onParsePreview: (String?, String, String) -> ParsedPayment?,
+    onRecordParsed: (ParsedPayment) -> Boolean,
+    onSaveRule: (AutoTrackRule) -> Unit,
+    onDeleteRule: (String) -> Unit,
+    onShowMessage: (String) -> Unit,
+    bottomInset: Dp = 0.dp,
+) {
+    val settings = state.metadata.autoTrack
+    val categoryMap = remember(state.categories) { state.categories.associateBy { it.id } }
+    var ruleTxType by remember { mutableStateOf(TransactionType.EXPENSE) }
+    val selectableCategories = remember(state.categories, ruleTxType) {
+        state.activeCategories.filter { it.type == ruleTxType }
+    }
+
+    var newRuleName by remember { mutableStateOf("") }
+    var newRuleKeyword by remember { mutableStateOf("") }
+    var newRuleCategoryId by remember(ruleTxType) {
+        mutableStateOf(selectableCategories.firstOrNull()?.id ?: "cat_food")
+    }
+
+    var simChannel by remember { mutableStateOf(PaymentChannel.WECHAT) }
+    var simTitle by remember { mutableStateOf("微信支付") }
+    var simContent by remember { mutableStateOf("商户：瑞幸咖啡 商品：生椰拿铁大杯 付款方式：零钱 支付成功 ￥19.90") }
+    var previewResult by remember { mutableStateOf<ParsedPayment?>(null) }
+
+    LazyColumn(
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp + bottomInset),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        item(key = "add_rule_card") {
+            MochiSectionHeader(title = "新增分类规则")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        MochiChip("支出规则", ruleTxType == TransactionType.EXPENSE, MochiColors.Expense) {
+                            ruleTxType = TransactionType.EXPENSE
+                        }
+                        MochiChip("收入规则", ruleTxType == TransactionType.INCOME, MochiColors.Income) {
+                            ruleTxType = TransactionType.INCOME
+                        }
+                    }
+                    TextField(
+                        value = newRuleName,
+                        onValueChange = { newRuleName = it },
+                        label = "规则名称（如 咖啡奶茶）",
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    TextField(
+                        value = newRuleKeyword,
+                        onValueChange = { newRuleKeyword = it },
+                        label = "关键词，用 | 分隔（如 瑞幸|星巴克）",
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        selectableCategories.forEach { cat ->
+                            MochiChip(cat.name, newRuleCategoryId == cat.id, Color(cat.colorHex)) {
+                                newRuleCategoryId = cat.id
+                            }
+                        }
+                    }
+                    TextButton(
+                        text = "添加规则",
+                        onClick = {
+                            if (newRuleName.isBlank() || newRuleKeyword.isBlank()) {
+                                onShowMessage("请填写规则名称与关键词")
+                                return@TextButton
+                            }
+                            onSaveRule(
+                                AutoTrackRule(
+                                    id = "",
+                                    name = newRuleName.trim(),
+                                    keyword = newRuleKeyword.trim(),
+                                    targetCategoryId = newRuleCategoryId,
+                                ),
+                            )
+                            newRuleName = ""
+                            newRuleKeyword = ""
+                            onShowMessage("已添加分类规则")
+                        },
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+        }
+
+        item(key = "rule_list") {
+            MochiSectionHeader(title = "已生效规则（${state.activeRules.size}）")
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (state.activeRules.isEmpty()) {
+                        Text(
+                            text = "暂无自定义规则，在上方添加关键词即可自动归类",
+                            fontSize = 13.sp,
+                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                        )
+                    } else {
+                        state.activeRules.forEachIndexed { idx, rule ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "${rule.name} → ${categoryMap[rule.targetCategoryId]?.name ?: rule.targetCategoryId}",
+                                        fontWeight = FontWeight.SemiBold,
+                                        fontSize = 14.sp,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    Text(
+                                        rule.keyword,
+                                        fontSize = 12.sp,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                                Spacer(Modifier.width(8.dp))
+                                TextButton(
+                                    text = "删除",
+                                    onClick = {
+                                        onDeleteRule(rule.id)
+                                        onShowMessage("已删除：${rule.name}")
+                                    },
+                                )
+                            }
+                            if (idx < state.activeRules.lastIndex) {
+                                HorizontalDivider()
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         item(key = "simulator") {
-            SmallTitle(text = "解析测试")
+            MochiSectionHeader(title = "解析测试")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(
                     modifier = Modifier.padding(16.dp),
@@ -422,146 +548,6 @@ fun AutoTrackScreen(
                                     fontSize = 12.sp,
                                     color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                 )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
- * Dedicated Level-2 sub-page for manually creating and managing custom auto-classification rules.
- */
-@Composable
-fun AutoTrackRulesScreen(
-    state: LedgerUiState,
-    onSaveRule: (AutoTrackRule) -> Unit,
-    onDeleteRule: (String) -> Unit,
-    onShowMessage: (String) -> Unit,
-    bottomInset: Dp = 0.dp,
-) {
-    val categoryMap = remember(state.categories) { state.categories.associateBy { it.id } }
-    var ruleTxType by remember { mutableStateOf(TransactionType.EXPENSE) }
-    val selectableCategories = remember(state.categories, ruleTxType) {
-        state.activeCategories.filter { it.type == ruleTxType }
-    }
-
-    var newRuleName by remember { mutableStateOf("") }
-    var newRuleKeyword by remember { mutableStateOf("") }
-    var newRuleCategoryId by remember(ruleTxType) {
-        mutableStateOf(selectableCategories.firstOrNull()?.id ?: "cat_food")
-    }
-
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 24.dp + bottomInset),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
-    ) {
-        item(key = "add_rule_card") {
-            SmallTitle(text = "新增分类规则")
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MochiChip("支出规则", ruleTxType == TransactionType.EXPENSE, MochiColors.Expense) {
-                            ruleTxType = TransactionType.EXPENSE
-                        }
-                        MochiChip("收入规则", ruleTxType == TransactionType.INCOME, MochiColors.Income) {
-                            ruleTxType = TransactionType.INCOME
-                        }
-                    }
-                    TextField(
-                        value = newRuleName,
-                        onValueChange = { newRuleName = it },
-                        label = "规则名称（如 咖啡奶茶）",
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    TextField(
-                        value = newRuleKeyword,
-                        onValueChange = { newRuleKeyword = it },
-                        label = "关键词，用 | 分隔（如 瑞幸|星巴克）",
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    ) {
-                        selectableCategories.forEach { cat ->
-                            MochiChip(cat.name, newRuleCategoryId == cat.id, Color(cat.colorHex)) {
-                                newRuleCategoryId = cat.id
-                            }
-                        }
-                    }
-                    TextButton(
-                        text = "添加规则",
-                        onClick = {
-                            if (newRuleName.isBlank() || newRuleKeyword.isBlank()) {
-                                onShowMessage("请填写规则名称与关键词")
-                                return@TextButton
-                            }
-                            onSaveRule(
-                                AutoTrackRule(
-                                    id = "",
-                                    name = newRuleName.trim(),
-                                    keyword = newRuleKeyword.trim(),
-                                    targetCategoryId = newRuleCategoryId,
-                                ),
-                            )
-                            newRuleName = ""
-                            newRuleKeyword = ""
-                            onShowMessage("已添加分类规则")
-                        },
-                        colors = ButtonDefaults.textButtonColorsPrimary(),
-                        modifier = Modifier.fillMaxWidth(),
-                    )
-                }
-            }
-        }
-
-        item(key = "rule_list") {
-            SmallTitle(text = "已生效规则（${state.activeRules.size}）")
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (state.activeRules.isEmpty()) {
-                        Text(
-                            text = "暂无自定义规则，在上方添加关键词即可自动归类",
-                            fontSize = 13.sp,
-                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                        )
-                    } else {
-                        state.activeRules.forEachIndexed { idx, rule ->
-                            Row(
-                                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        "${rule.name} → ${categoryMap[rule.targetCategoryId]?.name ?: rule.targetCategoryId}",
-                                        fontWeight = FontWeight.SemiBold,
-                                        fontSize = 14.sp,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    Text(
-                                        rule.keyword,
-                                        fontSize = 12.sp,
-                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                                Spacer(Modifier.width(8.dp))
-                                TextButton(
-                                    text = "删除",
-                                    onClick = {
-                                        onDeleteRule(rule.id)
-                                        onShowMessage("已删除：${rule.name}")
-                                    },
-                                )
-                            }
-                            if (idx < state.activeRules.lastIndex) {
-                                HorizontalDivider()
                             }
                         }
                     }

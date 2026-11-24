@@ -2,6 +2,8 @@ package com.mochiledger.shared.ui
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -11,6 +13,7 @@ import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -21,7 +24,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -232,13 +237,31 @@ private fun FloatingPillBottomBar(
         )
         .padding(horizontal = 8.dp, vertical = 8.dp)
 
-    Box(modifier = barModifier) {
+    BoxWithConstraints(modifier = barModifier) {
+        val tabs = MochiTab.entries
+        val tabWidth = maxWidth / tabs.size
+        val indicatorOffset by animateDpAsState(
+            targetValue = tabWidth * currentTab.ordinal,
+            animationSpec = spring(dampingRatio = 0.78f, stiffness = 420f),
+            label = "bottomNavIndicatorOffset",
+        )
+
+        // Smooth spring-sliding liquid pill indicator behind the active tab
+        Box(
+            modifier = Modifier
+                .offset(x = indicatorOffset)
+                .width(tabWidth)
+                .height(54.dp)
+                .clip(mochiShape(20.dp))
+                .background(MiuixTheme.colorScheme.primary.copy(alpha = 0.16f)),
+        )
+
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            MochiTab.entries.forEach { tab ->
+            tabs.forEach { tab ->
                 val selected = currentTab == tab
                 val fg = if (selected) {
                     MiuixTheme.colorScheme.primary
@@ -248,13 +271,12 @@ private fun FloatingPillBottomBar(
                 Column(
                     modifier = Modifier
                         .weight(1f)
+                        .height(54.dp)
                         .clip(mochiShape(20.dp))
-                        .background(
-                            if (selected) MiuixTheme.colorScheme.primary.copy(alpha = 0.16f)
-                            else Color.Transparent,
-                        )
-                        .clickable { onSelectTab(tab) }
-                        .padding(vertical = 9.dp),
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                        ) { onSelectTab(tab) },
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.Center,
                 ) {
@@ -287,9 +309,9 @@ private fun MochiMainContent(
         modifier = Modifier.fillMaxSize(),
         transitionSpec = {
             val forward = targetState.ordinal >= initialState.ordinal
-            val offset = if (forward) 1 else -1
-            (slideInHorizontally(tween(240)) { it / 8 * offset } + fadeIn(tween(220))) togetherWith
-                (slideOutHorizontally(tween(180)) { -it / 10 * offset } + fadeOut(tween(160)))
+            val dir = if (forward) 1 else -1
+            (slideInHorizontally(tween(260)) { it / 3 * dir } + fadeIn(tween(220))) togetherWith
+                (slideOutHorizontally(tween(220)) { -it / 4 * dir } + fadeOut(tween(180)))
         },
         label = "mainTabTransition",
     ) { targetTab ->

@@ -46,6 +46,7 @@ import com.mochiledger.shared.ui.components.DailySpendingBarChart
 import com.mochiledger.shared.ui.components.FlatIcon
 import com.mochiledger.shared.ui.components.MochiChip
 import com.mochiledger.shared.ui.components.MochiProgressBar
+import com.mochiledger.shared.ui.components.MochiSectionHeader
 import com.mochiledger.shared.ui.components.TransactionRow
 import com.mochiledger.shared.ui.theme.MochiColors
 import com.mochiledger.shared.ui.theme.mochiShape
@@ -379,7 +380,7 @@ fun AnalyticsScreen(state: LedgerUiState, bottomInset: Dp = 0.dp) {
 
         // Category-Filtered Transaction Details Card
         item(key = "category_details") {
-            SmallTitle(text = "分类账单明细（点击类别筛选）")
+            MochiSectionHeader(title = "分类账单明细（点击类别筛选）")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(vertical = 12.dp)) {
                     if (activeStats.isNotEmpty()) {
@@ -440,7 +441,7 @@ fun AnalyticsScreen(state: LedgerUiState, bottomInset: Dp = 0.dp) {
         if (periodMode == StatsPeriodMode.MONTH) {
             item(key = "daily_trend") {
                 val monthDays = daysInMonth(selectedYear, selectedMonth)
-                SmallTitle(text = "${selectedYear}年${selectedMonth}月 每日支出趋势")
+                MochiSectionHeader(title = "${selectedYear}年${selectedMonth}月 每日支出趋势")
                 Card(modifier = Modifier.fillMaxWidth()) {
                     Column(modifier = Modifier.padding(18.dp)) {
                         DailySpendingBarChart(
@@ -514,6 +515,7 @@ private fun GoogleCalendarDatePickerDialog(
     onDismiss: () -> Unit,
     onConfirm: (StatsPeriodMode, Int, Int, Int) -> Unit,
 ) {
+    var pickerMode by remember { mutableStateOf(initialMode) }
     var pickerYear by remember { mutableStateOf(initialYear) }
     var pickerMonth by remember { mutableStateOf(initialMonth) }
     var pickerDay by remember { mutableStateOf(initialDay.coerceIn(1, daysInMonth(initialYear, initialMonth))) }
@@ -521,6 +523,12 @@ private fun GoogleCalendarDatePickerDialog(
 
     val weekdays = listOf("日", "一", "二", "三", "四", "五", "六")
     val years = remember(currentYear) { ((currentYear - 5)..(currentYear + 2)).toList() }
+
+    val selectedHeadline = when (pickerMode) {
+        StatsPeriodMode.DAY -> "${pickerYear}年${pickerMonth}月${pickerDay}日"
+        StatsPeriodMode.MONTH -> "${pickerYear}年${pickerMonth}月"
+        StatsPeriodMode.YEAR -> "${pickerYear}年"
+    }
 
     Dialog(onDismissRequest = onDismiss) {
         Card(modifier = Modifier.fillMaxWidth()) {
@@ -541,16 +549,35 @@ private fun GoogleCalendarDatePickerDialog(
                             color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                         )
                         Text(
-                            text = "${pickerYear}年${pickerMonth}月${pickerDay}日",
+                            text = selectedHeadline,
                             fontSize = 20.sp,
                             fontWeight = FontWeight.Bold,
                         )
                     }
                     MochiChip("今天", false) {
+                        pickerMode = StatsPeriodMode.DAY
                         pickerYear = currentYear
                         pickerMonth = currentMonth
                         pickerDay = currentDay
                         showYearMonthGrid = false
+                    }
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    MochiChip("按日", pickerMode == StatsPeriodMode.DAY) {
+                        pickerMode = StatsPeriodMode.DAY
+                        showYearMonthGrid = false
+                    }
+                    MochiChip("按月", pickerMode == StatsPeriodMode.MONTH) {
+                        pickerMode = StatsPeriodMode.MONTH
+                        showYearMonthGrid = true
+                    }
+                    MochiChip("按年", pickerMode == StatsPeriodMode.YEAR) {
+                        pickerMode = StatsPeriodMode.YEAR
+                        showYearMonthGrid = true
                     }
                 }
 
@@ -707,7 +734,10 @@ private fun GoogleCalendarDatePickerDialog(
                                             modifier = Modifier
                                                 .weight(1f)
                                                 .height(40.dp)
-                                                .clickable { pickerDay = d },
+                                                .clickable {
+                                                    pickerDay = d
+                                                    pickerMode = StatsPeriodMode.DAY
+                                                },
                                             contentAlignment = Alignment.Center,
                                         ) {
                                             Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -758,28 +788,11 @@ private fun GoogleCalendarDatePickerDialog(
 
                 HorizontalDivider()
 
-                // Quick scope bar: view whole month / whole year directly
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    TextButton(
-                        text = "看整月",
-                        onClick = { onConfirm(StatsPeriodMode.MONTH, pickerYear, pickerMonth, pickerDay) },
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(
-                        text = "看全年",
-                        onClick = { onConfirm(StatsPeriodMode.YEAR, pickerYear, pickerMonth, pickerDay) },
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     TextButton(text = "取消", onClick = onDismiss, modifier = Modifier.weight(1f))
                     TextButton(
-                        text = "查看当日",
-                        onClick = { onConfirm(StatsPeriodMode.DAY, pickerYear, pickerMonth, pickerDay) },
+                        text = "查看",
+                        onClick = { onConfirm(pickerMode, pickerYear, pickerMonth, pickerDay) },
                         colors = ButtonDefaults.textButtonColorsPrimary(),
                         modifier = Modifier.weight(1f),
                     )

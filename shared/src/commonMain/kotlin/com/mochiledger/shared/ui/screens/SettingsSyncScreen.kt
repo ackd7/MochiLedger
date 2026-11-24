@@ -8,6 +8,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -23,8 +24,10 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,6 +38,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,6 +51,7 @@ import com.mochiledger.shared.platform.PlatformBackHandler
 import com.mochiledger.shared.ui.components.FlatIcon
 import com.mochiledger.shared.ui.components.MochiChip
 import com.mochiledger.shared.ui.components.MochiGlassBadge
+import com.mochiledger.shared.ui.components.MochiSectionHeader
 import com.mochiledger.shared.ui.theme.MochiColors
 import com.mochiledger.shared.ui.theme.mochiShape
 import kotlinx.datetime.Instant
@@ -166,68 +171,138 @@ fun SettingsSyncScreen(
             ) {
                 when (page) {
                     SyncSubPage.HUB -> {
-                        // 1. Live Cloud Sync Status Overview Card (WebDAV + Self-Hosted)
+                        // 1. Sleek Rectangular Overview Banner Card showing WebDAV & Self-Hosted Server status side by side
                         item(key = "sync_status_card") {
-                            SmallTitle(text = "云同步状态")
-                            Card(modifier = Modifier.fillMaxWidth()) {
-                                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                    SyncServiceStatusRow(
-                                        title = "WebDAV 云同步",
-                                        subtitle = when {
-                                            webDavReady && webDav.lastSyncAt > 0L -> "上次同步：${formatTimestamp(webDav.lastSyncAt)}"
-                                            webDavReady -> "已配置，点击立即同步验证"
-                                            webDav.enabled -> "已开启但信息不完整，点击补全"
-                                            else -> "未启用 · 点击配置坚果云 / Nextcloud / Alist"
-                                        },
-                                        statusText = when {
-                                            webDavReady && webDav.lastSyncAt > 0L -> "运行正常"
-                                            webDavReady -> "待同步"
-                                            webDav.enabled -> "待配置"
-                                            else -> "未启用"
-                                        },
-                                        statusColor = when {
-                                            webDavReady && webDav.lastSyncAt > 0L -> MochiColors.Income
-                                            webDav.enabled -> MochiColors.WarningAmber
-                                            else -> MiuixTheme.colorScheme.onSurfaceVariantSummary
-                                        },
-                                        onClick = { subPage = SyncSubPage.WEBDAV },
-                                    )
-                                    HorizontalDivider()
-                                    SyncServiceStatusRow(
-                                        title = "自建同步服务器",
-                                        subtitle = when {
-                                            selfHostedReady && selfHosted.lastSyncAt > 0L -> "${selfHosted.serverUrl} · 上次：${formatTimestamp(selfHosted.lastSyncAt)}"
-                                            selfHostedReady -> "${selfHosted.serverUrl} · 点击立即同步验证"
-                                            selfHosted.enabled -> "已开启但未填写地址"
-                                            else -> "未启用 · 点击配置路由器 / NAS / Cloudflare 同步服"
-                                        },
-                                        statusText = when {
-                                            selfHostedReady && selfHosted.lastSyncAt > 0L -> "运行正常"
-                                            selfHostedReady -> "待同步"
-                                            selfHosted.enabled -> "待配置"
-                                            else -> "未启用"
-                                        },
-                                        statusColor = when {
-                                            selfHostedReady && selfHosted.lastSyncAt > 0L -> MochiColors.Income
-                                            selfHosted.enabled -> MochiColors.WarningAmber
-                                            else -> MiuixTheme.colorScheme.onSurfaceVariantSummary
-                                        },
-                                        onClick = { subPage = SyncSubPage.SELF_HOSTED },
-                                    )
-                                    TextButton(
-                                        text = if (state.isSyncing) "多源同步中..." else "一键同步已启用服务器",
-                                        onClick = onSyncAllEnabled,
-                                        enabled = !state.isSyncing,
-                                        colors = ButtonDefaults.textButtonColorsPrimary(),
-                                        modifier = Modifier.fillMaxWidth(),
-                                    )
+                            MochiSectionHeader(title = "云同步状态")
+                            val webDavStatusText = when {
+                                webDavReady && webDav.lastSyncAt > 0L -> "运行正常"
+                                webDavReady -> "待同步"
+                                webDav.enabled -> "待配置"
+                                else -> "未启用"
+                            }
+                            val webDavColor = when {
+                                webDavReady && webDav.lastSyncAt > 0L -> MochiColors.Income
+                                webDav.enabled -> MochiColors.WarningAmber
+                                else -> MiuixTheme.colorScheme.onSurfaceVariantSummary
+                            }
+                            val selfStatusText = when {
+                                selfHostedReady && selfHosted.lastSyncAt > 0L -> "运行正常"
+                                selfHostedReady -> "待同步"
+                                selfHosted.enabled -> "待配置"
+                                else -> "未启用"
+                            }
+                            val selfColor = when {
+                                selfHostedReady && selfHosted.lastSyncAt > 0L -> MochiColors.Income
+                                selfHosted.enabled -> MochiColors.WarningAmber
+                                else -> MiuixTheme.colorScheme.onSurfaceVariantSummary
+                            }
+
+                            Column(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(mochiShape(20.dp))
+                                    .background(MiuixTheme.colorScheme.surface)
+                                    .border(0.9.dp, MiuixTheme.colorScheme.outline.copy(alpha = 0.28f), mochiShape(20.dp))
+                                    .padding(14.dp),
+                                verticalArrangement = Arrangement.spacedBy(12.dp),
+                            ) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                ) {
+                                    // WebDAV tile
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(mochiShape(14.dp))
+                                            .background(MiuixTheme.colorScheme.surfaceContainer)
+                                            .clickable { subPage = SyncSubPage.WEBDAV }
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .clip(CircleShape)
+                                                        .background(webDavColor),
+                                                )
+                                                Text("WebDAV", fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                            }
+                                            Text("›", fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                                        }
+                                        MochiGlassBadge(text = webDavStatusText, color = webDavColor)
+                                        Text(
+                                            text = if (webDavReady && webDav.lastSyncAt > 0L) formatTimestamp(webDav.lastSyncAt) else "点击配置云盘",
+                                            fontSize = 11.sp,
+                                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+
+                                    // Self-hosted server tile
+                                    Column(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(mochiShape(14.dp))
+                                            .background(MiuixTheme.colorScheme.surfaceContainer)
+                                            .clickable { subPage = SyncSubPage.SELF_HOSTED }
+                                            .padding(horizontal = 12.dp, vertical = 10.dp),
+                                        verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically,
+                                        ) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(8.dp)
+                                                        .clip(CircleShape)
+                                                        .background(selfColor),
+                                                )
+                                                Text("自建服务器", fontSize = 14.sp, fontWeight = FontWeight.Bold, maxLines = 1)
+                                            }
+                                            Text("›", fontSize = 14.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                                        }
+                                        MochiGlassBadge(text = selfStatusText, color = selfColor)
+                                        Text(
+                                            text = if (selfHostedReady && selfHosted.lastSyncAt > 0L) formatTimestamp(selfHosted.lastSyncAt) else "点击配置服务器",
+                                            fontSize = 11.sp,
+                                            color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
                                 }
+
+                                TextButton(
+                                    text = if (state.isSyncing) "多源同步中..." else "一键同步已启用服务器",
+                                    onClick = onSyncAllEnabled,
+                                    enabled = !state.isSyncing,
+                                    colors = ButtonDefaults.textButtonColorsPrimary(),
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
                             }
                         }
 
                         // 2. Manual Backup & Import/Export (Directly in Hub, no extra subpage)
                         item(key = "manual_backup_card") {
-                            SmallTitle(text = "备份与导入")
+                            MochiSectionHeader(title = "备份与导入")
                             Card(modifier = Modifier.fillMaxWidth()) {
                                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                     TextButton(
@@ -283,7 +358,7 @@ fun SettingsSyncScreen(
 
                         // 3. Auto Backup Policy
                         item(key = "auto_backup_card") {
-                            SmallTitle(text = "自动备份")
+                            MochiSectionHeader(title = "自动备份")
                             Card(modifier = Modifier.fillMaxWidth()) {
                                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     SwitchPreference(
@@ -337,13 +412,13 @@ fun SettingsSyncScreen(
                             }
                         }
 
-                        // 4. WeChat / Alipay Official Statement CSV Enrichment
+                        // 4. WeChat (XLSX) / Alipay (CSV) Official Statement Enrichment
                         item(key = "statement_csv_card") {
-                            SmallTitle(text = "官方账单补全")
+                            MochiSectionHeader(title = "官方账单补全")
                             Card(modifier = Modifier.fillMaxWidth()) {
                                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     Text(
-                                        text = "导入微信或支付宝官方导出的 CSV 账单，自动按时间与金额匹配已有账单补全商户和商品明细（不重复记账）。",
+                                        text = "导入微信官方账单（.xlsx）或支付宝官方账单（.csv），自动按时间与金额匹配已有账单补全商户和商品明细（不重复记账）。",
                                         fontSize = 12.sp,
                                         color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                                     )
@@ -354,7 +429,7 @@ fun SettingsSyncScreen(
                                         onCheckedChange = { importMissingFromCsv = it },
                                     )
                                     TextButton(
-                                        text = "选择微信 / 支付宝账单 (.csv)",
+                                        text = "选择微信 (.xlsx) / 支付宝 (.csv) 账单",
                                         onClick = { onPickImportStatementCsv(importMissingFromCsv) },
                                         modifier = Modifier.fillMaxWidth(),
                                     )
@@ -364,7 +439,7 @@ fun SettingsSyncScreen(
 
                         // 5. Local Backup History
                         item(key = "local_history_card") {
-                            SmallTitle(text = "本地备份历史（${state.localBackups.size} 份）")
+                            MochiSectionHeader(title = "本地备份历史（${state.localBackups.size} 份）")
                             Card(modifier = Modifier.fillMaxWidth()) {
                                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                     Text(
@@ -433,7 +508,7 @@ fun SettingsSyncScreen(
 
                         // 6. Bottom Tutorial Entry Card
                         item(key = "backup_tutorial_entry") {
-                            SmallTitle(text = "帮助")
+                            MochiSectionHeader(title = "帮助")
                             Card(modifier = Modifier.fillMaxWidth()) {
                                 ArrowPreference(
                                     title = "备份与同步使用教程",

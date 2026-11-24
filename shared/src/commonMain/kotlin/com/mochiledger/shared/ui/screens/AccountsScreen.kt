@@ -40,6 +40,7 @@ import com.mochiledger.shared.model.formatCents
 import com.mochiledger.shared.model.parseAmountToCents
 import com.mochiledger.shared.ui.components.FlatIcon
 import com.mochiledger.shared.ui.components.MochiChip
+import com.mochiledger.shared.ui.components.MochiSectionHeader
 import com.mochiledger.shared.ui.components.resolveAccountVisual
 import com.mochiledger.shared.ui.theme.MochiColors
 import com.mochiledger.shared.ui.theme.mochiHeroBrush
@@ -140,7 +141,7 @@ fun AccountsScreen(
             } else {
                 grouped.forEach { (type, list) ->
                     item(key = "group_${type.name}") {
-                        SmallTitle(text = type.label)
+                        MochiSectionHeader(title = type.label)
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column {
                                 list.forEachIndexed { idx, summary ->

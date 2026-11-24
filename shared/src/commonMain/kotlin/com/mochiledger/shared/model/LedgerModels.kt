@@ -256,7 +256,7 @@ data class ChangelogEntry(
 )
 
 object AppInfo {
-    const val VERSION_NAME = "1.6.1"
+    const val VERSION_NAME = "1.7.0"
     const val GITHUB_OWNER = "ackd7"
     const val GITHUB_REPO = "MochiLedger"
     const val GITHUB_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO"
@@ -264,6 +264,18 @@ object AppInfo {
     const val RELEASES_LATEST_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
 
     val CHANGELOG: List<ChangelogEntry> = listOf(
+        ChangelogEntry(
+            version = "v1.7.0",
+            title = "微信 XLSX 官方账单解析 · 底部滑出记账窗 · 导航滑动特效 · 小类标题卡片 · 规则测试独立入口",
+            changes = listOf(
+                "官方账单导入原生支持微信 .xlsx 与支付宝 .csv 双格式，零外部重型依赖，自动识别工作表与日期格式并智能匹配补全商品明细",
+                "重构主页记账弹窗：改为从下往上流畅滑出的底部抽屉，去除转账仅保留支出/收入切换，将时间选项、金额、收款对象、备注紧凑整合，分类与账户收拢为双列选项按钮（点击弹出选择框）",
+                "精简统计页日期选择器底部操作，仅保留「取消」与「查看」两个按钮，顶部快捷切换按日/按月/按年",
+                "将分类规则与解析测试从自动记账移出，独立打包为设置页二级入口「规则与解析测试」",
+                "同步与备份页顶部新增双列长方形云同步状态总览卡（直观展示 WebDAV 与自建服务器状态并支持点击直达配置）",
+                "全端所有小类开头标题升级为带主题色指示条的小卡片样式（MochiSectionHeader），底部悬浮导航切换新增弹簧滑动指示器与页面横向滑动过渡特效",
+            ),
+        ),
         ChangelogEntry(
             version = "v1.6.1",
             title = "自动记录全应用疑似消费 · 开关缺权限自动引导跳转 · 完整权限检测 · 分类规则二级入口",

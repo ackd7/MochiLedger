@@ -44,6 +44,7 @@ import com.mochiledger.shared.platform.PlatformBridge
 import com.mochiledger.shared.sync.UpdateCheckResult
 import com.mochiledger.shared.ui.components.FlatIcon
 import com.mochiledger.shared.ui.components.MochiChip
+import com.mochiledger.shared.ui.components.MochiSectionHeader
 import com.mochiledger.shared.ui.theme.MochiAccentPresets
 import com.mochiledger.shared.ui.theme.mochiShape
 import kotlinx.coroutines.launch
@@ -61,7 +62,7 @@ private enum class SettingsSubPage(val depth: Int) {
     MAIN(0),
     SYNC(1),
     AUTO_TRACK(1),
-    AUTO_TRACK_RULES(2),
+    RULES_AND_TEST(1),
     VERSION(1),
     CHANGELOG(2),
 }
@@ -85,7 +86,6 @@ fun AppSettingsScreen(
     PlatformBackHandler(enabled = subPage != SettingsSubPage.MAIN && subPage != SettingsSubPage.SYNC) {
         subPage = when (subPage) {
             SettingsSubPage.CHANGELOG -> SettingsSubPage.VERSION
-            SettingsSubPage.AUTO_TRACK_RULES -> SettingsSubPage.AUTO_TRACK
             else -> SettingsSubPage.MAIN
         }
     }
@@ -188,20 +188,19 @@ fun AppSettingsScreen(
                     AutoTrackScreen(
                         state = state,
                         onUpdateSettings = repository::updateAutoTrackSettings,
-                        onParsePreview = { pkg, title, content -> repository.parsePaymentPreview(pkg, title, content) },
-                        onRecordParsed = { parsed -> repository.recordParsedPayment(parsed) != null },
-                        onOpenRules = { subPage = SettingsSubPage.AUTO_TRACK_RULES },
                         onShowMessage = onShowMessage,
                         bottomInset = bottomInset,
                     )
                 }
             }
 
-            SettingsSubPage.AUTO_TRACK_RULES -> {
+            SettingsSubPage.RULES_AND_TEST -> {
                 Column(modifier = Modifier.fillMaxSize()) {
-                    IconBackHeader("自定义分类规则") { subPage = SettingsSubPage.AUTO_TRACK }
-                    AutoTrackRulesScreen(
+                    IconBackHeader("规则与解析测试") { subPage = SettingsSubPage.MAIN }
+                    RulesAndTestScreen(
                         state = state,
+                        onParsePreview = { pkg, title, content -> repository.parsePaymentPreview(pkg, title, content) },
+                        onRecordParsed = { parsed -> repository.recordParsedPayment(parsed) != null },
                         onSaveRule = repository::upsertRule,
                         onDeleteRule = repository::deleteRule,
                         onShowMessage = onShowMessage,
@@ -352,7 +351,7 @@ fun AppSettingsScreen(
                     verticalArrangement = Arrangement.spacedBy(14.dp),
                 ) {
                     item(key = "feature_entries") {
-                        SmallTitle(text = "数据与扩展")
+                        MochiSectionHeader(title = "数据与扩展")
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column {
                                 val syncSummary = buildList {
@@ -370,16 +369,22 @@ fun AppSettingsScreen(
                                     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
                                     ArrowPreference(
                                         title = "自动记账",
-                                        summary = "通知栏、无障碍识屏、LSPosed 与分类规则",
+                                        summary = "通知栏、无障碍识屏、LSPosed 与权限检测",
                                         onClick = { subPage = SettingsSubPage.AUTO_TRACK },
                                     )
                                 }
+                                HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                                ArrowPreference(
+                                    title = "规则与解析测试",
+                                    summary = "自定义分类规则（${state.activeRules.size} 条）与模拟解析测试",
+                                    onClick = { subPage = SettingsSubPage.RULES_AND_TEST },
+                                )
                             }
                         }
                     }
 
                     item(key = "theme_section") {
-                        SmallTitle(text = "主题与颜色")
+                        MochiSectionHeader(title = "主题与颜色")
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column(
                                 modifier = Modifier.padding(16.dp),
@@ -424,7 +429,7 @@ fun AppSettingsScreen(
                     }
 
                     item(key = "about_section") {
-                        SmallTitle(text = "关于与版本")
+                        MochiSectionHeader(title = "关于与版本")
                         Card(modifier = Modifier.fillMaxWidth()) {
                             Column {
                                 ArrowPreference(

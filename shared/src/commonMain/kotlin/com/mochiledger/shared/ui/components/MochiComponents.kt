@@ -72,6 +72,40 @@ fun categoryEmoji(iconKey: String): String = when (iconKey) {
 }
 
 @Composable
+fun MochiSectionHeader(
+    title: String,
+    modifier: Modifier = Modifier,
+    accentColor: Color = MiuixTheme.colorScheme.primary,
+) {
+    Row(
+        modifier = modifier
+            .padding(bottom = 8.dp)
+            .clip(mochiShape(11.dp))
+            .background(MiuixTheme.colorScheme.surfaceContainer)
+            .border(0.8.dp, MiuixTheme.colorScheme.outline.copy(alpha = 0.28f), mochiShape(11.dp))
+            .padding(horizontal = 11.dp, vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(7.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(13.dp)
+                .clip(CircleShape)
+                .background(accentColor),
+        )
+        Text(
+            text = title,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = MiuixTheme.colorScheme.onSurface,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+@Composable
 fun MochiGlassBadge(
     text: String,
     color: Color,

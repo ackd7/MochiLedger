@@ -1,9 +1,16 @@
 package com.mochiledger.shared.ui.screens
 
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,15 +20,17 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -33,10 +42,12 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.mochiledger.shared.data.LedgerUiState
 import com.mochiledger.shared.model.LedgerTransaction
 import com.mochiledger.shared.model.RecordSource
@@ -279,9 +290,6 @@ fun TransactionsScreen(
                         MochiChip("收入", filterType == TransactionType.INCOME, MochiColors.Income) {
                             filterType = TransactionType.INCOME
                         }
-                        MochiChip("转账", filterType == TransactionType.TRANSFER, MochiColors.Transfer) {
-                            filterType = TransactionType.TRANSFER
-                        }
                     }
                 }
             }
@@ -410,7 +418,11 @@ private fun TransactionEditorDialog(
     onDelete: (() -> Unit)?,
 ) {
     val tz = TimeZone.currentSystemDefault()
-    var txType by remember { mutableStateOf(initial?.type ?: TransactionType.EXPENSE) }
+    var txType by remember {
+        mutableStateOf(
+            if (initial?.type == TransactionType.INCOME) TransactionType.INCOME else TransactionType.EXPENSE,
+        )
+    }
     var amountText by remember {
         mutableStateOf(
             initial?.let { "${it.amountCents / 100}.${(it.amountCents % 100).toString().padStart(2, '0')}" } ?: "",
@@ -422,6 +434,13 @@ private fun TransactionEditorDialog(
         mutableStateOf(initial?.timestamp ?: PlatformBridge.currentTimeMillis())
     }
     var showDateTimePicker by remember { mutableStateOf(false) }
+    var showCategoryPicker by remember { mutableStateOf(false) }
+    var showAccountPicker by remember { mutableStateOf(false) }
+    var sheetVisible by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        sheetVisible = true
+    }
 
     val selectedDt = remember(selectedTimestamp) {
         Instant.fromEpochMilliseconds(selectedTimestamp).toLocalDateTime(tz)
@@ -441,213 +460,280 @@ private fun TransactionEditorDialog(
                 ?: if (txType == TransactionType.INCOME) "cat_other_inc" else "cat_other_exp",
         )
     }
+    val selectedCategory = availableCategories.firstOrNull { it.id == selectedCategoryId }
+
     val accounts = state.activeAccounts
     var selectedAccountId by remember {
         mutableStateOf(initial?.accountId ?: accounts.firstOrNull()?.id ?: "acc_wechat")
     }
-    var targetAccountId by remember {
-        mutableStateOf(
-            initial?.targetAccountId ?: accounts.firstOrNull { it.id != selectedAccountId }?.id,
-        )
-    }
+    val selectedAccount = accounts.firstOrNull { it.id == selectedAccountId }
 
-    Dialog(onDismissRequest = onDismiss) {
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(
-                modifier = Modifier
-                    .padding(18.dp)
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
+    val sheetShape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black.copy(alpha = 0.48f))
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null,
+                    onClick = onDismiss,
+                ),
+            contentAlignment = Alignment.BottomCenter,
+        ) {
+            AnimatedVisibility(
+                visible = sheetVisible,
+                enter = slideInVertically(tween(260)) { it } + fadeIn(tween(200)),
+                exit = slideOutVertically(tween(200)) { it } + fadeOut(tween(160)),
             ) {
-                Text(
-                    text = if (initial == null) "记一笔" else "编辑账单",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                )
-
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    MochiChip("支出", txType == TransactionType.EXPENSE, MochiColors.Expense) {
-                        txType = TransactionType.EXPENSE
-                    }
-                    MochiChip("收入", txType == TransactionType.INCOME, MochiColors.Income) {
-                        txType = TransactionType.INCOME
-                    }
-                    MochiChip("转账", txType == TransactionType.TRANSFER, MochiColors.Transfer) {
-                        txType = TransactionType.TRANSFER
-                    }
-                }
-
-                // Date & Time Selector Bar
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .clip(mochiShape(13.dp))
-                            .background(MiuixTheme.colorScheme.surfaceContainer)
-                            .border(1.dp, MiuixTheme.colorScheme.outline.copy(alpha = 0.35f), mochiShape(13.dp))
-                            .clickable { showDateTimePicker = true }
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        FlatIcon("calendar", MiuixTheme.colorScheme.primary, size = 15.dp)
-                        Text(
-                            text = "$formattedDateTime ▾",
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            maxLines = 1,
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(sheetShape)
+                        .background(MiuixTheme.colorScheme.surface)
+                        .border(0.8.dp, MiuixTheme.colorScheme.outline.copy(alpha = 0.25f), sheetShape)
+                        .clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null,
+                            onClick = {},
                         )
-                    }
-                    MochiChip("现在", false) {
-                        selectedTimestamp = PlatformBridge.currentTimeMillis()
-                    }
-                    MochiChip("昨天", false) {
-                        selectedTimestamp = PlatformBridge.currentTimeMillis() - 86_400_000L
-                    }
-                }
-
-                TextField(
-                    value = amountText,
-                    onValueChange = { input ->
-                        if (input.all { it.isDigit() || it == '.' }) amountText = input
-                    },
-                    label = "金额（元，如 32.50）",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                TextField(
-                    value = merchant,
-                    onValueChange = { merchant = it },
-                    label = "收款人 / 商户（如 瑞幸咖啡、张三）",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                TextField(
-                    value = note,
-                    onValueChange = { note = it },
-                    label = "备注 / 买了什么（可选）",
-                    modifier = Modifier.fillMaxWidth(),
-                )
-
-                val rawAutoMsg = initial?.rawAutoMessage
-                if (!rawAutoMsg.isNullOrBlank()) {
-                    Box(
+                        .navigationBarsPadding()
+                        .padding(horizontal = 18.dp, vertical = 14.dp),
+                ) {
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .clip(mochiShape(12.dp))
-                            .background(MiuixTheme.colorScheme.surfaceContainer)
-                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                            .verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
                     ) {
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        // Top drag handle
+                        Box(
+                            modifier = Modifier.fillMaxWidth(),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .width(38.dp)
+                                    .height(4.dp)
+                                    .clip(CircleShape)
+                                    .background(MiuixTheme.colorScheme.outline.copy(alpha = 0.45f)),
+                            )
+                        }
+
+                        // Header: Title + Expense / Income Segmented Switch (Transfer removed)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
                             Text(
-                                text = "原始支付信息",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                text = if (initial == null) "记一笔" else "编辑账单",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
                             )
-                            Text(
-                                text = rawAutoMsg,
-                                fontSize = 12.sp,
-                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            Row(
+                                modifier = Modifier
+                                    .clip(mochiShape(14.dp))
+                                    .background(MiuixTheme.colorScheme.surfaceContainer)
+                                    .padding(3.dp),
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            ) {
+                                val expSelected = txType == TransactionType.EXPENSE
+                                val incSelected = txType == TransactionType.INCOME
+                                Box(
+                                    modifier = Modifier
+                                        .clip(mochiShape(11.dp))
+                                        .background(if (expSelected) MochiColors.Expense.copy(alpha = 0.20f) else Color.Transparent)
+                                        .clickable { txType = TransactionType.EXPENSE }
+                                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                                ) {
+                                    Text(
+                                        text = "支出",
+                                        fontSize = 13.sp,
+                                        fontWeight = if (expSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (expSelected) MochiColors.Expense else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    )
+                                }
+                                Box(
+                                    modifier = Modifier
+                                        .clip(mochiShape(11.dp))
+                                        .background(if (incSelected) MochiColors.Income.copy(alpha = 0.20f) else Color.Transparent)
+                                        .clickable { txType = TransactionType.INCOME }
+                                        .padding(horizontal = 14.dp, vertical = 6.dp),
+                                ) {
+                                    Text(
+                                        text = "收入",
+                                        fontSize = 13.sp,
+                                        fontWeight = if (incSelected) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (incSelected) MochiColors.Income else MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    )
+                                }
+                            }
+                        }
+
+                        // Unified compact block: Time option + Amount + Payee + Note together
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(mochiShape(18.dp))
+                                .background(MiuixTheme.colorScheme.surfaceContainer.copy(alpha = 0.65f))
+                                .border(0.8.dp, MiuixTheme.colorScheme.outline.copy(alpha = 0.22f), mochiShape(18.dp))
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            // Time option row
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(mochiShape(12.dp))
+                                    .background(MiuixTheme.colorScheme.surface)
+                                    .clickable { showDateTimePicker = true }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                ) {
+                                    FlatIcon("calendar", MiuixTheme.colorScheme.primary, size = 15.dp)
+                                    Text(
+                                        text = "时间",
+                                        fontSize = 13.sp,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    )
+                                }
+                                Text(
+                                    text = "$formattedDateTime ▾",
+                                    fontSize = 13.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = MiuixTheme.colorScheme.onSurface,
+                                    maxLines = 1,
+                                )
+                            }
+
+                            TextField(
+                                value = amountText,
+                                onValueChange = { input ->
+                                    if (input.all { it.isDigit() || it == '.' }) amountText = input
+                                },
+                                label = "金额（元，如 32.50）",
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            ) {
+                                TextField(
+                                    value = merchant,
+                                    onValueChange = { merchant = it },
+                                    label = "收款对象",
+                                    modifier = Modifier.weight(1f),
+                                )
+                                TextField(
+                                    value = note,
+                                    onValueChange = { note = it },
+                                    label = "备注（可选）",
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                        }
+
+                        // Compact Option Selectors: Category & Account (opens clean modal pickers)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            CompactOptionSelectorTile(
+                                label = "分类",
+                                value = selectedCategory?.name ?: "选择分类",
+                                dotColor = selectedCategory?.let { Color(it.colorHex) } ?: MiuixTheme.colorScheme.primary,
+                                onClick = { showCategoryPicker = true },
+                                modifier = Modifier.weight(1f),
+                            )
+                            CompactOptionSelectorTile(
+                                label = "账户",
+                                value = selectedAccount?.name ?: "选择账户",
+                                dotColor = selectedAccount?.let { Color(it.colorHex) } ?: MiuixTheme.colorScheme.primary,
+                                onClick = { showAccountPicker = true },
+                                modifier = Modifier.weight(1f),
+                            )
+                        }
+
+                        val rawAutoMsg = initial?.rawAutoMessage
+                        if (!rawAutoMsg.isNullOrBlank()) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clip(mochiShape(12.dp))
+                                    .background(MiuixTheme.colorScheme.surfaceContainer)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp),
+                            ) {
+                                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Text(
+                                        text = "原始支付信息",
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.SemiBold,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    )
+                                    Text(
+                                        text = rawAutoMsg,
+                                        fontSize = 12.sp,
+                                        color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                                    )
+                                }
+                            }
+                        }
+
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            if (onDelete != null) {
+                                TextButton(
+                                    text = "删除",
+                                    onClick = onDelete,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
+                            TextButton(
+                                text = "取消",
+                                onClick = onDismiss,
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(
+                                text = "保存",
+                                onClick = {
+                                    val cents = parseAmountToCents(amountText) ?: return@TextButton
+                                    if (cents <= 0L) return@TextButton
+                                    val now = PlatformBridge.currentTimeMillis()
+                                    onSave(
+                                        LedgerTransaction(
+                                            id = initial?.id ?: PlatformBridge.randomUuid(),
+                                            type = txType,
+                                            amountCents = cents,
+                                            categoryId = selectedCategoryId,
+                                            accountId = selectedAccountId,
+                                            targetAccountId = null,
+                                            timestamp = selectedTimestamp,
+                                            merchant = merchant.trim(),
+                                            note = note.trim(),
+                                            source = initial?.source ?: RecordSource.MANUAL,
+                                            rawAutoMessage = initial?.rawAutoMessage,
+                                            updatedAt = now,
+                                        ),
+                                    )
+                                },
+                                colors = ButtonDefaults.textButtonColorsPrimary(),
+                                modifier = Modifier.weight(1f),
                             )
                         }
                     }
-                }
-
-                if (txType != TransactionType.TRANSFER) {
-                    SmallTitle(text = "分类")
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        availableCategories.forEach { cat ->
-                            MochiChip(
-                                label = cat.name,
-                                selected = selectedCategoryId == cat.id,
-                                accentColor = Color(cat.colorHex),
-                                onClick = { selectedCategoryId = cat.id },
-                            )
-                        }
-                    }
-                }
-
-                SmallTitle(text = if (txType == TransactionType.TRANSFER) "转出账户" else "账户")
-                Row(
-                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                ) {
-                    accounts.forEach { acc ->
-                        MochiChip(
-                            label = acc.name,
-                            selected = selectedAccountId == acc.id,
-                            accentColor = Color(acc.colorHex),
-                            onClick = { selectedAccountId = acc.id },
-                        )
-                    }
-                }
-
-                if (txType == TransactionType.TRANSFER) {
-                    SmallTitle(text = "转入账户")
-                    Row(
-                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        accounts.filter { it.id != selectedAccountId }.forEach { acc ->
-                            MochiChip(
-                                label = acc.name,
-                                selected = targetAccountId == acc.id,
-                                accentColor = Color(acc.colorHex),
-                                onClick = { targetAccountId = acc.id },
-                            )
-                        }
-                    }
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    if (onDelete != null) {
-                        TextButton(
-                            text = "删除",
-                            onClick = onDelete,
-                            modifier = Modifier.weight(1f),
-                        )
-                    }
-                    TextButton(
-                        text = "取消",
-                        onClick = onDismiss,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(
-                        text = "保存",
-                        onClick = {
-                            val cents = parseAmountToCents(amountText) ?: return@TextButton
-                            if (cents <= 0L) return@TextButton
-                            val now = PlatformBridge.currentTimeMillis()
-                            onSave(
-                                LedgerTransaction(
-                                    id = initial?.id ?: PlatformBridge.randomUuid(),
-                                    type = txType,
-                                    amountCents = cents,
-                                    categoryId = if (txType == TransactionType.TRANSFER) "cat_transfer" else selectedCategoryId,
-                                    accountId = selectedAccountId,
-                                    targetAccountId = if (txType == TransactionType.TRANSFER) targetAccountId else null,
-                                    timestamp = selectedTimestamp,
-                                    merchant = merchant.trim(),
-                                    note = note.trim(),
-                                    source = initial?.source ?: RecordSource.MANUAL,
-                                    rawAutoMessage = initial?.rawAutoMessage,
-                                    updatedAt = now,
-                                ),
-                            )
-                        },
-                        colors = ButtonDefaults.textButtonColorsPrimary(),
-                        modifier = Modifier.weight(1f),
-                    )
                 }
             }
         }
@@ -662,6 +748,152 @@ private fun TransactionEditorDialog(
                 showDateTimePicker = false
             },
         )
+    }
+
+    if (showCategoryPicker) {
+        CompactOptionPickerDialog(
+            title = if (txType == TransactionType.EXPENSE) "选择支出分类" else "选择收入分类",
+            options = availableCategories.map { Triple(it.id, it.name, Color(it.colorHex)) },
+            selectedId = selectedCategoryId,
+            onDismiss = { showCategoryPicker = false },
+            onSelect = { id ->
+                selectedCategoryId = id
+                showCategoryPicker = false
+            },
+        )
+    }
+
+    if (showAccountPicker) {
+        CompactOptionPickerDialog(
+            title = "选择账户",
+            options = accounts.map { Triple(it.id, it.name, Color(it.colorHex)) },
+            selectedId = selectedAccountId,
+            onDismiss = { showAccountPicker = false },
+            onSelect = { id ->
+                selectedAccountId = id
+                showAccountPicker = false
+            },
+        )
+    }
+}
+
+@Composable
+private fun CompactOptionSelectorTile(
+    label: String,
+    value: String,
+    dotColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .clip(mochiShape(14.dp))
+            .background(MiuixTheme.colorScheme.surfaceContainer)
+            .border(0.8.dp, MiuixTheme.colorScheme.outline.copy(alpha = 0.25f), mochiShape(14.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
+    ) {
+        Row(
+            modifier = Modifier.weight(1f),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(7.dp),
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(8.dp)
+                    .clip(CircleShape)
+                    .background(dotColor),
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(
+                    text = label,
+                    fontSize = 11.sp,
+                    color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                    maxLines = 1,
+                )
+                Text(
+                    text = value,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+        Text("▾", fontSize = 12.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+    }
+}
+
+@Composable
+private fun CompactOptionPickerDialog(
+    title: String,
+    options: List<Triple<String, String, Color>>,
+    selectedId: String,
+    onDismiss: () -> Unit,
+    onSelect: (String) -> Unit,
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Text(title, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    options.chunked(2).forEach { rowItems ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            rowItems.forEach { (id, name, color) ->
+                                val isSel = id == selectedId
+                                Row(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .clip(mochiShape(13.dp))
+                                        .background(if (isSel) color.copy(alpha = 0.18f) else MiuixTheme.colorScheme.surfaceContainer)
+                                        .border(
+                                            width = if (isSel) 1.2.dp else 0.8.dp,
+                                            color = if (isSel) color else MiuixTheme.colorScheme.outline.copy(alpha = 0.25f),
+                                            shape = mochiShape(13.dp),
+                                        )
+                                        .clickable { onSelect(id) }
+                                        .padding(horizontal = 10.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(7.dp),
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .clip(CircleShape)
+                                            .background(color),
+                                    )
+                                    Text(
+                                        text = name,
+                                        fontSize = 13.sp,
+                                        fontWeight = if (isSel) FontWeight.Bold else FontWeight.Medium,
+                                        color = if (isSel) color else MiuixTheme.colorScheme.onSurface,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                }
+                            }
+                            if (rowItems.size == 1) {
+                                Spacer(Modifier.weight(1f))
+                            }
+                        }
+                    }
+                }
+                TextButton(text = "取消", onClick = onDismiss, modifier = Modifier.fillMaxWidth())
+            }
+        }
     }
 }
 

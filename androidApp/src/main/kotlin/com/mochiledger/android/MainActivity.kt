@@ -8,8 +8,8 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import com.mochiledger.shared.platform.AndroidPlatformContext
+import com.mochiledger.shared.platform.StatementFileDecoder
 import com.mochiledger.shared.ui.MochiLedgerApp
-import java.nio.charset.Charset
 
 class MainActivity : ComponentActivity() {
     private var pendingImportCallback: ((Result<Pair<String, String>>) -> Unit)? = null
@@ -47,10 +47,10 @@ class MainActivity : ComponentActivity() {
             return@registerForActivityResult
         }
         val res = runCatching {
-            val fileName = resolveDisplayName(uri) ?: "statement.csv"
+            val fileName = resolveDisplayName(uri) ?: "statement.xlsx"
             val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
                 ?: throw IllegalStateException("无法读取所选账单文件")
-            fileName to decodeStatementBytes(bytes)
+            fileName to StatementFileDecoder.decode(fileName, bytes)
         }
         cb(res)
     }
@@ -85,7 +85,15 @@ class MainActivity : ComponentActivity() {
         }
         AndroidPlatformContext.openStatementCsvPicker = { callback ->
             pendingCsvCallback = callback
-            openCsvLauncher.launch(arrayOf("text/csv", "text/comma-separated-values", "text/plain", "*/*"))
+            openCsvLauncher.launch(
+                arrayOf(
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    "text/csv",
+                    "text/comma-separated-values",
+                    "text/plain",
+                    "*/*",
+                ),
+            )
         }
         AndroidPlatformContext.saveBackupFilePicker = { suggestedFileName, content, callback ->
             pendingExportContent = content
@@ -105,16 +113,6 @@ class MainActivity : ComponentActivity() {
             AndroidPlatformContext.openStatementCsvPicker = null
             AndroidPlatformContext.saveBackupFilePicker = null
         }
-    }
-
-    private fun decodeStatementBytes(bytes: ByteArray): String {
-        val utf8 = bytes.toString(Charsets.UTF_8)
-        val looksLikeUtf8 = !utf8.contains('\uFFFD') &&
-            (utf8.contains("交易时间") || utf8.contains("交易对方") || utf8.contains("微信") || utf8.contains("支付宝"))
-        if (looksLikeUtf8) return utf8.removePrefix("\uFEFF")
-        return runCatching {
-            String(bytes, Charset.forName("GB18030")).removePrefix("\uFEFF")
-        }.getOrElse { utf8.removePrefix("\uFEFF") }
     }
 
     private fun resolveDisplayName(uri: Uri): String? {

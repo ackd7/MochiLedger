@@ -15,9 +15,13 @@ import com.mochiledger.shared.model.WebDavConfig
 import com.mochiledger.shared.parser.BillStatementImporter
 import com.mochiledger.shared.parser.PaymentMessageParser
 import com.mochiledger.shared.parser.ScreenNodeExtractor
+import com.mochiledger.shared.platform.StatementFileDecoder
 import com.mochiledger.shared.sync.LedgerJson
 import com.mochiledger.shared.sync.LedgerMerger
 import kotlinx.serialization.encodeToString
+import java.io.ByteArrayOutputStream
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -460,5 +464,77 @@ class MochiLedgerCoreTest {
             nowMillis = now,
         )
         assertNull(oldDetail)
+    }
+
+    @Test
+    fun wechatOfficialXlsxStatementDecodesAndParsesEndToEnd() {
+        val sharedStrings = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+              <si><t>微信支付账单明细</t></si>
+              <si><t>交易时间</t></si>
+              <si><t>交易类型</t></si>
+              <si><t>交易对方</t></si>
+              <si><t>商品</t></si>
+              <si><t>收/支</t></si>
+              <si><t>金额(元)</t></si>
+              <si><t>支付方式</t></si>
+              <si><t>当前状态</t></si>
+              <si><t>2026-11-24 12:30:00</t></si>
+              <si><t>商户消费</t></si>
+              <si><t>瑞幸咖啡</t></si>
+              <si><t>生椰拿铁大杯</t></si>
+              <si><t>支出</t></si>
+              <si><t>¥19.90</t></si>
+              <si><t>零钱</t></si>
+              <si><t>支付成功</t></si>
+            </sst>
+        """.trimIndent()
+        val sheet1 = """
+            <?xml version="1.0" encoding="UTF-8"?>
+            <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
+              <sheetData>
+                <row r="1"><c r="A1" t="s"><v>0</v></c></row>
+                <row r="2">
+                  <c r="A2" t="s"><v>1</v></c>
+                  <c r="B2" t="s"><v>2</v></c>
+                  <c r="C2" t="s"><v>3</v></c>
+                  <c r="D2" t="s"><v>4</v></c>
+                  <c r="E2" t="s"><v>5</v></c>
+                  <c r="F2" t="s"><v>6</v></c>
+                  <c r="G2" t="s"><v>7</v></c>
+                  <c r="H2" t="s"><v>8</v></c>
+                </row>
+                <row r="3">
+                  <c r="A3" t="s"><v>9</v></c>
+                  <c r="B3" t="s"><v>10</v></c>
+                  <c r="C3" t="s"><v>11</v></c>
+                  <c r="D3" t="s"><v>12</v></c>
+                  <c r="E3" t="s"><v>13</v></c>
+                  <c r="F3" t="s"><v>14</v></c>
+                  <c r="G3" t="s"><v>15</v></c>
+                  <c r="H3" t="s"><v>16</v></c>
+                </row>
+              </sheetData>
+            </worksheet>
+        """.trimIndent()
+
+        val baos = ByteArrayOutputStream()
+        ZipOutputStream(baos).use { zos ->
+            zos.putNextEntry(ZipEntry("xl/sharedStrings.xml"))
+            zos.write(sharedStrings.toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+            zos.putNextEntry(ZipEntry("xl/worksheets/sheet1.xml"))
+            zos.write(sheet1.toByteArray(Charsets.UTF_8))
+            zos.closeEntry()
+        }
+
+        val csvText = StatementFileDecoder.decode("微信支付账单.xlsx", baos.toByteArray())
+        val (_, entries) = BillStatementImporter.parseCsv(csvText)
+        assertEquals(1, entries.size)
+        assertEquals(PaymentChannel.WECHAT, entries[0].channel)
+        assertEquals("瑞幸咖啡", entries[0].merchant)
+        assertEquals("生椰拿铁大杯", entries[0].product)
+        assertEquals(1990L, entries[0].amountCents)
     }
 }
