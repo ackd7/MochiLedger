@@ -7,8 +7,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,6 +19,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,6 +32,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -49,8 +50,12 @@ import com.mochiledger.shared.ui.components.TransactionRow
 import com.mochiledger.shared.ui.theme.MochiColors
 import com.mochiledger.shared.ui.theme.mochiHeroBrush
 import com.mochiledger.shared.ui.theme.mochiShape
+import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.Instant
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import top.yukonga.miuix.kmp.basic.ButtonDefaults
 import top.yukonga.miuix.kmp.basic.Card
@@ -374,7 +379,16 @@ fun TransactionsScreen(
             onSave = { tx ->
                 onSaveTransaction(tx)
                 showAddDialog = false
-                onShowMessage(if (editingTx == null) "已记账：${formatCents(tx.amountCents)}" else "已更新账单")
+                val txDt = Instant.fromEpochMilliseconds(tx.timestamp).toLocalDateTime(TimeZone.currentSystemDefault())
+                val isTodayTx = txDt.year == nowDt.year && txDt.monthNumber == nowDt.monthNumber && txDt.dayOfMonth == nowDt.dayOfMonth
+                if (!isTodayTx) {
+                    todayOnly = false
+                    selectedYear = txDt.year
+                    selectedMonth = txDt.monthNumber
+                }
+                val dateTag = "${txDt.monthNumber.toString().padStart(2, '0')}-${txDt.dayOfMonth.toString().padStart(2, '0')} " +
+                    "${txDt.hour.toString().padStart(2, '0')}:${txDt.minute.toString().padStart(2, '0')}"
+                onShowMessage(if (editingTx == null) "已记账：${formatCents(tx.amountCents)}（$dateTag）" else "已更新账单（$dateTag）")
             },
             onDelete = editingTx?.let { existing ->
                 {
@@ -387,7 +401,6 @@ fun TransactionsScreen(
     }
 }
 
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun TransactionEditorDialog(
     initial: LedgerTransaction?,
@@ -396,6 +409,7 @@ private fun TransactionEditorDialog(
     onSave: (LedgerTransaction) -> Unit,
     onDelete: (() -> Unit)?,
 ) {
+    val tz = TimeZone.currentSystemDefault()
     var txType by remember { mutableStateOf(initial?.type ?: TransactionType.EXPENSE) }
     var amountText by remember {
         mutableStateOf(
@@ -404,6 +418,18 @@ private fun TransactionEditorDialog(
     }
     var merchant by remember { mutableStateOf(initial?.merchant ?: "") }
     var note by remember { mutableStateOf(initial?.note ?: "") }
+    var selectedTimestamp by remember {
+        mutableStateOf(initial?.timestamp ?: PlatformBridge.currentTimeMillis())
+    }
+    var showDateTimePicker by remember { mutableStateOf(false) }
+
+    val selectedDt = remember(selectedTimestamp) {
+        Instant.fromEpochMilliseconds(selectedTimestamp).toLocalDateTime(tz)
+    }
+    val formattedDateTime = remember(selectedDt) {
+        "${selectedDt.year}-${selectedDt.monthNumber.toString().padStart(2, '0')}-${selectedDt.dayOfMonth.toString().padStart(2, '0')} " +
+            "${selectedDt.hour.toString().padStart(2, '0')}:${selectedDt.minute.toString().padStart(2, '0')}"
+    }
 
     val availableCategories = remember(state.categories, txType) {
         state.activeCategories.filter { it.type == txType }
@@ -412,7 +438,7 @@ private fun TransactionEditorDialog(
         mutableStateOf(
             initial?.categoryId?.takeIf { id -> availableCategories.any { it.id == id } }
                 ?: availableCategories.firstOrNull()?.id
-                ?: "cat_other_exp",
+                ?: if (txType == TransactionType.INCOME) "cat_other_inc" else "cat_other_exp",
         )
     }
     val accounts = state.activeAccounts
@@ -428,7 +454,9 @@ private fun TransactionEditorDialog(
     Dialog(onDismissRequest = onDismiss) {
         Card(modifier = Modifier.fillMaxWidth()) {
             Column(
-                modifier = Modifier.padding(18.dp),
+                modifier = Modifier
+                    .padding(18.dp)
+                    .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 Text(
@@ -446,6 +474,38 @@ private fun TransactionEditorDialog(
                     }
                     MochiChip("转账", txType == TransactionType.TRANSFER, MochiColors.Transfer) {
                         txType = TransactionType.TRANSFER
+                    }
+                }
+
+                // Date & Time Selector Bar
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .clip(mochiShape(13.dp))
+                            .background(MiuixTheme.colorScheme.surfaceContainer)
+                            .border(1.dp, MiuixTheme.colorScheme.outline.copy(alpha = 0.35f), mochiShape(13.dp))
+                            .clickable { showDateTimePicker = true }
+                            .padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        FlatIcon("calendar", MiuixTheme.colorScheme.primary, size = 15.dp)
+                        Text(
+                            text = "$formattedDateTime ▾",
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            maxLines = 1,
+                        )
+                    }
+                    MochiChip("现在", false) {
+                        selectedTimestamp = PlatformBridge.currentTimeMillis()
+                    }
+                    MochiChip("昨天", false) {
+                        selectedTimestamp = PlatformBridge.currentTimeMillis() - 86_400_000L
                     }
                 }
 
@@ -472,7 +532,8 @@ private fun TransactionEditorDialog(
                     modifier = Modifier.fillMaxWidth(),
                 )
 
-                if (!initial?.rawAutoMessage.isNullOrBlank()) {
+                val rawAutoMsg = initial?.rawAutoMessage
+                if (!rawAutoMsg.isNullOrBlank()) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -488,7 +549,7 @@ private fun TransactionEditorDialog(
                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             )
                             Text(
-                                text = initial?.rawAutoMessage.orEmpty(),
+                                text = rawAutoMsg,
                                 fontSize = 12.sp,
                                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                             )
@@ -498,9 +559,9 @@ private fun TransactionEditorDialog(
 
                 if (txType != TransactionType.TRANSFER) {
                     SmallTitle(text = "分类")
-                    FlowRow(
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         availableCategories.forEach { cat ->
                             MochiChip(
@@ -514,9 +575,9 @@ private fun TransactionEditorDialog(
                 }
 
                 SmallTitle(text = if (txType == TransactionType.TRANSFER) "转出账户" else "账户")
-                FlowRow(
+                Row(
+                    modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
                     accounts.forEach { acc ->
                         MochiChip(
@@ -530,9 +591,9 @@ private fun TransactionEditorDialog(
 
                 if (txType == TransactionType.TRANSFER) {
                     SmallTitle(text = "转入账户")
-                    FlowRow(
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
                         accounts.filter { it.id != selectedAccountId }.forEach { acc ->
                             MochiChip(
@@ -575,7 +636,7 @@ private fun TransactionEditorDialog(
                                     categoryId = if (txType == TransactionType.TRANSFER) "cat_transfer" else selectedCategoryId,
                                     accountId = selectedAccountId,
                                     targetAccountId = if (txType == TransactionType.TRANSFER) targetAccountId else null,
-                                    timestamp = initial?.timestamp ?: now,
+                                    timestamp = selectedTimestamp,
                                     merchant = merchant.trim(),
                                     note = note.trim(),
                                     source = initial?.source ?: RecordSource.MANUAL,
@@ -589,6 +650,339 @@ private fun TransactionEditorDialog(
                     )
                 }
             }
+        }
+    }
+
+    if (showDateTimePicker) {
+        TransactionDateTimePickerDialog(
+            initialMillis = selectedTimestamp,
+            onDismiss = { showDateTimePicker = false },
+            onConfirm = { newMillis ->
+                selectedTimestamp = newMillis
+                showDateTimePicker = false
+            },
+        )
+    }
+}
+
+private fun txDaysInMonth(year: Int, month: Int): Int = when (month) {
+    1, 3, 5, 7, 8, 10, 12 -> 31
+    4, 6, 9, 11 -> 30
+    2 -> if ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0) 29 else 28
+    else -> 30
+}
+
+private fun txFirstDayOffsetSunday(year: Int, month: Int): Int {
+    return when (LocalDate(year, month, 1).dayOfWeek) {
+        DayOfWeek.SUNDAY -> 0
+        DayOfWeek.MONDAY -> 1
+        DayOfWeek.TUESDAY -> 2
+        DayOfWeek.WEDNESDAY -> 3
+        DayOfWeek.THURSDAY -> 4
+        DayOfWeek.FRIDAY -> 5
+        DayOfWeek.SATURDAY -> 6
+    }
+}
+
+@Composable
+private fun TransactionDateTimePickerDialog(
+    initialMillis: Long,
+    onDismiss: () -> Unit,
+    onConfirm: (Long) -> Unit,
+) {
+    val tz = TimeZone.currentSystemDefault()
+    val nowDt = remember {
+        Instant.fromEpochMilliseconds(PlatformBridge.currentTimeMillis()).toLocalDateTime(tz)
+    }
+    val initDt = remember(initialMillis) {
+        Instant.fromEpochMilliseconds(initialMillis).toLocalDateTime(tz)
+    }
+
+    var year by remember { mutableStateOf(initDt.year) }
+    var month by remember { mutableStateOf(initDt.monthNumber) }
+    var day by remember { mutableStateOf(initDt.dayOfMonth) }
+    var hour by remember { mutableStateOf(initDt.hour) }
+    var minute by remember { mutableStateOf(initDt.minute) }
+    var showYearMonthGrid by remember { mutableStateOf(false) }
+
+    val weekdays = listOf("日", "一", "二", "三", "四", "五", "六")
+    val years = remember(nowDt.year) { ((nowDt.year - 5)..(nowDt.year + 1)).toList() }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(
+                modifier = Modifier.padding(18.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column {
+                        Text("选择记账时间", fontSize = 11.sp, color = MiuixTheme.colorScheme.onSurfaceVariantSummary)
+                        Text(
+                            text = "${year}年${month}月${day}日 ${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}",
+                            fontSize = 18.sp,
+                            fontWeight = FontWeight.Bold,
+                        )
+                    }
+                    MochiChip("现在", false) {
+                        val cur = Instant.fromEpochMilliseconds(PlatformBridge.currentTimeMillis()).toLocalDateTime(tz)
+                        year = cur.year
+                        month = cur.monthNumber
+                        day = cur.dayOfMonth
+                        hour = cur.hour
+                        minute = cur.minute
+                        showYearMonthGrid = false
+                    }
+                }
+
+                HorizontalDivider()
+
+                // Month/Year bar
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .clip(mochiShape(10.dp))
+                            .clickable { showYearMonthGrid = !showYearMonthGrid }
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        Text("${year}年${month}月", fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                        Text(if (showYearMonthGrid) "▴" else "▾", fontSize = 13.sp, color = MiuixTheme.colorScheme.primary)
+                    }
+                    if (!showYearMonthGrid) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(MiuixTheme.colorScheme.surfaceContainer)
+                                    .clickable {
+                                        if (month == 1) {
+                                            year -= 1
+                                            month = 12
+                                        } else {
+                                            month -= 1
+                                        }
+                                        day = day.coerceAtMost(txDaysInMonth(year, month))
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) { Text("‹", fontSize = 18.sp) }
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(MiuixTheme.colorScheme.surfaceContainer)
+                                    .clickable {
+                                        if (month == 12) {
+                                            year += 1
+                                            month = 1
+                                        } else {
+                                            month += 1
+                                        }
+                                        day = day.coerceAtMost(txDaysInMonth(year, month))
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) { Text("›", fontSize = 18.sp) }
+                        }
+                    }
+                }
+
+                if (showYearMonthGrid) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        years.forEach { y ->
+                            MochiChip("${y}年", year == y) {
+                                year = y
+                                day = day.coerceAtMost(txDaysInMonth(y, month))
+                            }
+                        }
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        for (r in 0 until 3) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                for (c in 0 until 4) {
+                                    val m = r * 4 + c + 1
+                                    val sel = month == m
+                                    Box(
+                                        modifier = Modifier
+                                            .weight(1f)
+                                            .clip(mochiShape(12.dp))
+                                            .background(if (sel) MiuixTheme.colorScheme.primary else MiuixTheme.colorScheme.surfaceContainer)
+                                            .clickable {
+                                                month = m
+                                                day = day.coerceAtMost(txDaysInMonth(year, m))
+                                                showYearMonthGrid = false
+                                            }
+                                            .padding(vertical = 10.dp),
+                                        contentAlignment = Alignment.Center,
+                                    ) {
+                                        Text(
+                                            "${m}月",
+                                            color = if (sel) Color.White else MiuixTheme.colorScheme.onSurface,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.SemiBold,
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    Row(modifier = Modifier.fillMaxWidth()) {
+                        weekdays.forEach { wd ->
+                            Text(
+                                text = wd,
+                                modifier = Modifier.weight(1f),
+                                textAlign = TextAlign.Center,
+                                fontSize = 12.sp,
+                                color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
+                            )
+                        }
+                    }
+                    val offset = txFirstDayOffsetSunday(year, month)
+                    val totalDays = txDaysInMonth(year, month)
+                    val cells = buildList<Int?> {
+                        repeat(offset) { add(null) }
+                        for (d in 1..totalDays) add(d)
+                        while (size % 7 != 0) add(null)
+                    }
+                    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                        cells.chunked(7).forEach { week ->
+                            Row(modifier = Modifier.fillMaxWidth()) {
+                                week.forEach { d ->
+                                    if (d == null) {
+                                        Spacer(Modifier.weight(1f).height(34.dp))
+                                    } else {
+                                        val isSel = d == day
+                                        val isToday = year == nowDt.year && month == nowDt.monthNumber && d == nowDt.dayOfMonth
+                                        Box(
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .height(34.dp)
+                                                .clickable { day = d },
+                                            contentAlignment = Alignment.Center,
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(30.dp)
+                                                    .clip(CircleShape)
+                                                    .then(
+                                                        when {
+                                                            isSel -> Modifier.background(MiuixTheme.colorScheme.primary)
+                                                            isToday -> Modifier.border(1.5.dp, MiuixTheme.colorScheme.primary, CircleShape)
+                                                            else -> Modifier
+                                                        },
+                                                    ),
+                                                contentAlignment = Alignment.Center,
+                                            ) {
+                                                Text(
+                                                    text = "$d",
+                                                    fontSize = 13.sp,
+                                                    fontWeight = if (isSel || isToday) FontWeight.Bold else FontWeight.Normal,
+                                                    color = when {
+                                                        isSel -> Color.White
+                                                        isToday -> MiuixTheme.colorScheme.primary
+                                                        else -> MiuixTheme.colorScheme.onSurface
+                                                    },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                HorizontalDivider()
+
+                // Hour & Minute Selector
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text("具体时间", fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        TimeStepperPill(
+                            valueText = "${hour.toString().padStart(2, '0')}时",
+                            onMinus = { hour = (hour + 23) % 24 },
+                            onPlus = { hour = (hour + 1) % 24 },
+                        )
+                        Text(":", fontWeight = FontWeight.Bold)
+                        TimeStepperPill(
+                            valueText = "${minute.toString().padStart(2, '0')}分",
+                            onMinus = { minute = (minute + 59) % 60 },
+                            onPlus = { minute = (minute + 1) % 60 },
+                        )
+                    }
+                }
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    TextButton(text = "取消", onClick = onDismiss, modifier = Modifier.weight(1f))
+                    TextButton(
+                        text = "确定时间",
+                        onClick = {
+                            val safeDay = day.coerceIn(1, txDaysInMonth(year, month))
+                            val ldt = LocalDateTime(year, month, safeDay, hour, minute, 0)
+                            onConfirm(ldt.toInstant(tz).toEpochMilliseconds())
+                        },
+                        colors = ButtonDefaults.textButtonColorsPrimary(),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TimeStepperPill(
+    valueText: String,
+    onMinus: () -> Unit,
+    onPlus: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .clip(mochiShape(12.dp))
+            .background(MiuixTheme.colorScheme.surfaceContainer)
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(26.dp)
+                .clip(CircleShape)
+                .background(MiuixTheme.colorScheme.surface)
+                .clickable(onClick = onMinus),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("−", fontSize = 14.sp, fontWeight = FontWeight.Bold)
+        }
+        Text(valueText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+        Box(
+            modifier = Modifier
+                .size(26.dp)
+                .clip(CircleShape)
+                .background(MiuixTheme.colorScheme.surface)
+                .clickable(onClick = onPlus),
+            contentAlignment = Alignment.Center,
+        ) {
+            Text("+", fontSize = 14.sp, fontWeight = FontWeight.Bold)
         }
     }
 }

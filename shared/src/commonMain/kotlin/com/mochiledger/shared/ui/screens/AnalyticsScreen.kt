@@ -498,7 +498,6 @@ private fun firstDayOffsetSundayStart(year: Int, month: Int): Int {
         DayOfWeek.THURSDAY -> 4
         DayOfWeek.FRIDAY -> 5
         DayOfWeek.SATURDAY -> 6
-        else -> 0
     }
 }
 

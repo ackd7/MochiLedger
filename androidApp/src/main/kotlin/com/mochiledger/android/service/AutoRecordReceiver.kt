@@ -32,6 +32,13 @@ class AutoRecordReceiver : BroadcastReceiver() {
         if (sourceTag == "NOTIFICATION" && !settings.fallbackNotificationListener) return
         if (pkg == PaymentChannel.WECHAT.packageName && !settings.hookWeChat) return
         if (pkg == PaymentChannel.ALIPAY.packageName && !settings.hookAlipay) return
+        if (sourceTag == "NOTIFICATION" &&
+            pkg != PaymentChannel.WECHAT.packageName &&
+            pkg != PaymentChannel.ALIPAY.packageName &&
+            !settings.listenOtherApps
+        ) {
+            return
+        }
 
         val recordSource = when {
             sourceTag == "NOTIFICATION" -> RecordSource.NOTIFICATION_LISTENER

@@ -9,12 +9,14 @@ import com.mochiledger.shared.model.TransactionType
 import kotlin.math.roundToLong
 
 /**
- * Unified Alipay & WeChat Pay message parser shared across Android (LSPosed / NotificationListener)
- * and Windows Desktop (interactive rule tester & simulator).
+ * Unified multi-app payment & order notification parser shared across Android
+ * (LSPosed + full-app NotificationListener) and Windows Desktop (rule tester & simulator).
  */
 object PaymentMessageParser {
 
     private val amountPatterns = listOf(
+        // 实付¥18.50 / 实付款18.50元 / 合计￥39.90
+        Regex("""(?:实付|实付款|应付|合计|总计|订单金额)[：:\s]*(?:¥|￥|RMB\s*)?([0-9]+(?:\.[0-9]{1,2})?)\s*元?"""),
         // ¥18.50 / ￥18.50 / RMB 18.50
         Regex("""(?:¥|￥|RMB\s*|人民币\s*)([0-9]+(?:\.[0-9]{1,2})?)"""),
         // 付款18.50元 / 收款0.01元 / 消费199.00元 / 支出35元 / 收入12.3元
@@ -26,8 +28,8 @@ object PaymentMessageParser {
     private val merchantPatterns = listOf(
         // 向星巴克付款32.00元 / 给张三转账
         Regex("""(?:向|给)\s*([^\s，,。：:；;（(]{1,24}?)\s*(?:付款|支付|转账|消费)"""),
-        // 商户：瑞幸咖啡 / 收款方：美团外卖 / 对方：...
-        Regex("""(?:商户全称|商户|商家|收款方|付款方|对方|交易对象)[：:\s]+([^\n，,。；;]{1,28}?)(?:\s+(?:商品|付款方式|支付方式|支付成功|付款成功|收款成功|消费|付款|支付|金额|订单|¥|￥)|$)"""),
+        // 商户：瑞幸咖啡 / 收款方：美团外卖 / 店铺：...
+        Regex("""(?:商户全称|商户|商家|店铺|门店|收款方|付款方|对方|交易对象)[：:\s]+([^\n，,。；;]{1,28}?)(?:\s+(?:商品|购买商品|订单详情|付款方式|支付方式|支付成功|付款成功|收款成功|实付款|实付|应付|合计|总计|消费|付款|支付|金额|订单|¥|￥)|$)"""),
         // 在美团外卖消费 / 在7-Eleven支付
         Regex("""在\s*([^\s，,。：:；;]{1,24}?)\s*(?:消费|付款|支付)"""),
         // 收到来自张三的转账 / 张三向你转账
@@ -35,20 +37,45 @@ object PaymentMessageParser {
     )
 
     private val productPatterns = listOf(
-        // 商品：生椰拿铁 / 商品说明：美团外卖订单 / 商品名称：Type-C数据线
-        Regex("""(?:商品说明|商品名称|商品信息|商品|订单信息)[：:\s]+([^\n，,。；;]{1,40}?)(?:\s+(?:付款方式|支付方式|商户|支付成功|付款成功|¥|￥)|$)"""),
+        // 商品：生椰拿铁 / 商品说明：美团外卖订单 / 订单：Type-C数据线
+        Regex("""(?:商品说明|商品名称|商品信息|购买商品|商品|订单详情|订单信息)[：:\s]+([^\n，,。；;]{1,40}?)(?:\s+(?:付款方式|支付方式|商户|店铺|门店|支付成功|付款成功|实付款|实付|应付|合计|总计|¥|￥)|$)"""),
     )
 
     private val incomeKeywords = listOf(
-        "收款", "到账", "收入", "入账", "收益", "退款", "已退回", "向你付款", "向你转账", "领取了你的", "收到红包", "到账通知",
+        "收款", "到账", "收入", "入账", "收益", "退款", "已退回", "退回至", "向你付款", "向你转账", "领取了你的", "收到红包", "到账通知",
     )
 
     private val expenseKeywords = listOf(
-        "付款", "支付", "消费", "支出", "扣款", "已支付", "成功付款", "支付成功", "付款成功", "交易成功", "花呗", "自动扣费", "免密支付", "发出红包",
+        "付款", "支付", "实付", "消费", "支出", "扣款", "已支付", "成功支付", "成功付款", "支付成功", "付款成功", "下单成功", "交易成功", "购买成功", "花呗", "自动扣费", "免密支付", "发出红包",
     )
 
-    private val ignoreKeywords = listOf(
-        "验证码", "登录", "安全提醒", "绑定", "广告", "优惠券", "签到", "积分", "蚂蚁森林", "蚂蚁庄园", "好友申请",
+    private val hardIgnoreKeywords = listOf(
+        "验证码", "登录", "安全提醒", "绑定", "广告",
+        "最高可借", "可借额度", "信用额度提升", "待付款", "未付款", "请尽快支付", "即将超时",
+        "取件码", "已签收", "派送中", "蚂蚁森林", "蚂蚁庄园", "好友申请",
+    )
+
+    private val promoOrLogisticsKeywords = listOf(
+        "优惠券", "神券", "膨胀", "满减", "立减", "津贴", "省钱卡",
+        "预计送达", "骑手", "取餐", "签到", "积分",
+    )
+
+    private val explicitPaidMarkers = listOf(
+        "实付", "支付成功", "付款成功", "成功支付", "成功付款", "已支付", "下单成功", "购买成功",
+        "自动扣费", "免密支付", "收款到账", "已退回", "退款成功",
+    )
+
+    private val blockedChatPackages = setOf(
+        "com.tencent.mobileqq",
+        "com.tencent.tim",
+        "org.telegram.messenger",
+        "com.discord",
+        "com.sina.weibo",
+    )
+
+    private val smsAndBankHints = listOf(
+        "mms", "messaging", "message", "bank", "cmb", "icbc", "ccb", "abchina",
+        "boc", "psbc", "pingan", "citic", "spdb", "cib", "cmbc", "cebbank", "gdb",
     )
 
     fun parse(
@@ -60,15 +87,31 @@ object PaymentMessageParser {
         source: RecordSource? = null,
         nowMillis: Long = 0L,
     ): ParsedPayment? {
+        val pkg = packageName?.trim().orEmpty()
+        if (pkg in blockedChatPackages) return null
+
         val fullText = listOf(title.trim(), content.trim()).filter { it.isNotEmpty() }.joinToString(" ")
         if (fullText.isBlank()) return null
 
-        // Filter out non-payment notifications
-        if (ignoreKeywords.any { fullText.contains(it, ignoreCase = true) }) {
+        // Guard against personal WeChat chat messages like a friend texting "我刚付款20元"
+        if (pkg == PaymentChannel.WECHAT.packageName && source == RecordSource.NOTIFICATION_LISTENER) {
+            val isOfficialWeChatPay = title.contains("微信支付") || title.contains("微信收款") ||
+                fullText.contains("微信支付") || fullText.contains("收款到账")
+            if (!isOfficialWeChatPay) return null
+        }
+
+        // Filter out OTP codes, unpaid reminders, credit ads, and parcel pickup codes unconditionally
+        if (hardIgnoreKeywords.any { fullText.contains(it, ignoreCase = true) }) {
             return null
         }
 
-        val channel = detectChannel(packageName, fullText) ?: return null
+        // Filter out promo/coupon/logistics notifications unless explicit payment completion markers exist
+        val hasExplicitPaid = explicitPaidMarkers.any { fullText.contains(it, ignoreCase = true) }
+        if (!hasExplicitPaid && promoOrLogisticsKeywords.any { fullText.contains(it, ignoreCase = true) }) {
+            return null
+        }
+
+        val channel = detectChannel(pkg, fullText) ?: return null
         val amountCents = extractAmountCents(fullText) ?: return null
         if (amountCents <= 0L) return null
 
@@ -77,6 +120,15 @@ object PaymentMessageParser {
         val productDetail = extractProductDetail(fullText)
         val suggestedAccountName = detectAccountName(fullText, channel)
         val matchedRule = matchRule("$fullText $productDetail", merchant, channel, rules)
+        val fallbackCat = defaultCategoryFor(txType, "$fullText $productDetail ${channel.label}")
+
+        // For unknown generic apps (OTHER_APP), require matching an explicit user rule or known category rule
+        // so unrelated system/game/news notifications with numbers never pollute the ledger.
+        if (channel == PaymentChannel.OTHER_APP && matchedRule == null &&
+            (fallbackCat == "cat_other_exp" || fallbackCat == "cat_other_inc")
+        ) {
+            return null
+        }
 
         val resolvedAccountId = matchedRule?.targetAccountId
             ?: accounts.firstOrNull { !it.isDeleted && it.name.contains(suggestedAccountName, ignoreCase = true) }?.id
@@ -84,14 +136,17 @@ object PaymentMessageParser {
                 !it.isDeleted && when (channel) {
                     PaymentChannel.WECHAT -> it.id == "acc_wechat" || it.name.contains("微信")
                     PaymentChannel.ALIPAY -> it.id == "acc_alipay" || it.name.contains("支付宝")
+                    PaymentChannel.UNIONPAY, PaymentChannel.BANK_SMS -> it.name.contains("银行") || it.name.contains("云闪付")
+                    else -> it.name.contains("微信") || it.name.contains("支付宝")
                 }
             }?.id
 
-        val resolvedCategoryId = matchedRule?.targetCategoryId ?: defaultCategoryFor(txType, "$fullText $productDetail")
+        val resolvedCategoryId = matchedRule?.targetCategoryId ?: fallbackCat
 
         val effectiveSource = source ?: when (channel) {
             PaymentChannel.WECHAT -> RecordSource.WECHAT_LSPOSED
             PaymentChannel.ALIPAY -> RecordSource.ALIPAY_LSPOSED
+            else -> RecordSource.NOTIFICATION_LISTENER
         }
 
         val cleanNote = buildString {
@@ -125,12 +180,30 @@ object PaymentMessageParser {
         )
     }
 
-    private fun detectChannel(packageName: String?, text: String): PaymentChannel? {
+    private fun detectChannel(packageName: String, text: String): PaymentChannel? {
+        val lowerPkg = packageName.lowercase()
         return when {
             packageName == PaymentChannel.WECHAT.packageName -> PaymentChannel.WECHAT
             packageName == PaymentChannel.ALIPAY.packageName -> PaymentChannel.ALIPAY
+            packageName == PaymentChannel.UNIONPAY.packageName || lowerPkg.contains("unionpay") -> PaymentChannel.UNIONPAY
+            lowerPkg.contains("meituan") || lowerPkg.contains("dianping") -> PaymentChannel.MEITUAN
+            lowerPkg.contains("jingdong") || lowerPkg.contains("com.jd.") -> PaymentChannel.JINGDONG
+            lowerPkg.contains("taobao") || lowerPkg.contains("tmall") -> PaymentChannel.TAOBAO
+            lowerPkg.contains("pinduoduo") || lowerPkg.contains("xunmeng") -> PaymentChannel.PINDUODUO
+            lowerPkg.contains("me.ele") -> PaymentChannel.ELEME
+            lowerPkg.contains("didi") || lowerPkg.contains("autonavi") || lowerPkg.contains("caocao") -> PaymentChannel.DIDI
+            smsAndBankHints.any { lowerPkg.contains(it) } -> PaymentChannel.BANK_SMS
             text.contains("微信") || text.contains("零钱") -> PaymentChannel.WECHAT
             text.contains("支付宝") || text.contains("花呗") || text.contains("余额宝") -> PaymentChannel.ALIPAY
+            text.contains("云闪付") || text.contains("银联") -> PaymentChannel.UNIONPAY
+            text.contains("美团") -> PaymentChannel.MEITUAN
+            text.contains("京东") || text.contains("白条") -> PaymentChannel.JINGDONG
+            text.contains("淘宝") || text.contains("天猫") -> PaymentChannel.TAOBAO
+            text.contains("拼多多") -> PaymentChannel.PINDUODUO
+            text.contains("饿了么") -> PaymentChannel.ELEME
+            text.contains("滴滴") -> PaymentChannel.DIDI
+            text.contains("银行") || text.contains("尾号") -> PaymentChannel.BANK_SMS
+            packageName.isNotBlank() -> PaymentChannel.OTHER_APP
             else -> null
         }
     }
@@ -149,16 +222,17 @@ object PaymentMessageParser {
     }
 
     private fun detectTransactionType(text: String): TransactionType? {
-        // Strip brand names so "微信支付收款50元" doesn't falsely match "支付" as an expense
         val normalized = text
             .replace("微信支付", "")
             .replace("支付宝", "")
+            .replace("京东支付", "")
+            .replace("美团支付", "")
+            .replace("云闪付", "")
             .trim()
-        // Special disambiguation: "向你付款" / "收款" / "到账" / "退款" / "收益" are always income
         if (normalized.contains("向你付款") || normalized.contains("向你转账") ||
             normalized.contains("收款") || normalized.contains("到账") ||
-            normalized.contains("退款") || normalized.contains("收益") ||
-            normalized.contains("入账")
+            normalized.contains("退款") || normalized.contains("已退回") ||
+            normalized.contains("收益") || normalized.contains("入账")
         ) {
             return TransactionType.INCOME
         }
@@ -177,22 +251,21 @@ object PaymentMessageParser {
         for (pattern in merchantPatterns) {
             val match = pattern.find(combined)
             val candidate = match?.groupValues?.getOrNull(1)?.trim()
-            if (!candidate.isNullOrBlank() && candidate !in listOf("你", "您", "微信支付", "支付宝")) {
+            if (!candidate.isNullOrBlank() && candidate !in listOf("你", "您", "微信支付", "支付宝", "个人")) {
                 return candidate
             }
         }
         val cleanTitle = title.trim()
+        val genericTitles = listOf("微信支付", "支付宝", "交易提醒", "收款通知", "订单通知", "支付通知", "消息通知")
         if (cleanTitle.isNotEmpty() &&
-            !cleanTitle.contains("微信支付") &&
-            !cleanTitle.contains("支付宝") &&
-            !cleanTitle.contains("交易提醒") &&
-            !cleanTitle.contains("收款通知") &&
+            genericTitles.none { cleanTitle.contains(it) } &&
             cleanTitle.length <= 24
         ) {
             return cleanTitle
         }
         return when {
             type == TransactionType.INCOME && combined.contains("余额宝") -> "余额宝收益"
+            type == TransactionType.INCOME && combined.contains("退款") -> "${channel.label}退款"
             type == TransactionType.INCOME && combined.contains("红包") -> "${channel.label}红包"
             type == TransactionType.INCOME -> "${channel.label}收款"
             combined.contains("花呗") -> "花呗消费"
@@ -214,9 +287,16 @@ object PaymentMessageParser {
     private fun detectAccountName(text: String, channel: PaymentChannel): String {
         return when {
             text.contains("花呗") -> "花呗"
+            text.contains("白条") -> "京东白条"
             text.contains("招商银行") || text.contains("招行") -> "招商银行"
-            channel == PaymentChannel.WECHAT -> "微信零钱"
-            else -> "支付宝"
+            text.contains("建设银行") || text.contains("建行") -> "建设银行"
+            text.contains("工商银行") || text.contains("工行") -> "工商银行"
+            text.contains("农业银行") || text.contains("农行") -> "农业银行"
+            text.contains("中国银行") || text.contains("中行") -> "中国银行"
+            text.contains("微信") || text.contains("零钱") || channel == PaymentChannel.WECHAT -> "微信零钱"
+            text.contains("支付宝") || channel == PaymentChannel.ALIPAY -> "支付宝"
+            channel == PaymentChannel.UNIONPAY || channel == PaymentChannel.BANK_SMS -> "银行卡"
+            else -> "微信零钱"
         }
     }
 
@@ -248,7 +328,7 @@ object PaymentMessageParser {
             TransactionType.EXPENSE -> when {
                 listOf("餐饮", "美食", "外卖", "咖啡", "奶茶", "瑞幸", "星巴克", "美团", "饿了么", "麦当劳", "肯德基", "食堂", "火锅", "烧烤", "拉面", "水果", "面包", "早餐", "午饭", "晚饭").any { text.contains(it, true) } -> "cat_food"
                 listOf("滴滴", "打车", "地铁", "公交", "乘车码", "12306", "中石化", "中石油", "加油", "充电", "高速", "ETC", "停车", "快递", "顺丰").any { text.contains(it, true) } -> "cat_transport"
-                listOf("淘宝", "天猫", "京东", "拼多多", "盒马", "山姆", "超市", "便利店", "罗森", "全家", "711", "屈臣氏", "优衣库", "购物").any { text.contains(it, true) } -> "cat_shopping"
+                listOf("淘宝", "天猫", "京东", "拼多多", "唯品会", "得物", "盒马", "山姆", "超市", "便利店", "罗森", "全家", "711", "屈臣氏", "优衣库", "购物").any { text.contains(it, true) } -> "cat_shopping"
                 listOf("电网", "电费", "水费", "水务", "燃气", "移动", "联通", "电信", "话费", "宽带", "物业", "房租").any { text.contains(it, true) } -> "cat_housing"
                 listOf("Apple", "iCloud", "Steam", "B站", "网易云", "腾讯视频", "爱奇艺", "阿里云", "腾讯云", "WPS", "会员", "订阅").any { text.contains(it, true) } -> "cat_digital"
                 listOf("电影", "猫眼", "淘票票", "KTV", "健身", "门票", "景区", "游戏", "米哈游").any { text.contains(it, true) } -> "cat_entertainment"
@@ -261,18 +341,18 @@ object PaymentMessageParser {
     }
 
     /**
-     * Checks whether a newly detected payment duplicates an existing recent auto-tracked payment
-     * (e.g., when both LSPosed hook and NotificationListener fire for the same payment).
+     * Cross-channel deduplication: matches same transaction type + exact amount within [dedupeWindowSeconds]
+     * (e.g., when WeChat LSPosed captures ¥28.50 AND Meituan app notification also reports ¥28.50 2s later).
      */
     fun isDuplicate(
         candidate: ParsedPayment,
+        recentType: TransactionType,
         recentAmountCents: Long,
         recentTimestamp: Long,
-        recentChannel: PaymentChannel?,
         dedupeWindowSeconds: Int,
     ): Boolean {
+        if (candidate.type != recentType) return false
         if (candidate.amountCents != recentAmountCents) return false
-        if (recentChannel != null && recentChannel != candidate.channel) return false
         val diffMillis = kotlin.math.abs(candidate.detectedAt - recentTimestamp)
         return diffMillis <= dedupeWindowSeconds * 1000L
     }

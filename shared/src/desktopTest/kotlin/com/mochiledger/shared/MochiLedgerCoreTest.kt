@@ -8,6 +8,7 @@ import com.mochiledger.shared.model.LedgerAccount
 import com.mochiledger.shared.model.LedgerSnapshot
 import com.mochiledger.shared.model.LedgerTransaction
 import com.mochiledger.shared.model.PaymentChannel
+import com.mochiledger.shared.model.RecordSource
 import com.mochiledger.shared.model.SelfHostedSyncConfig
 import com.mochiledger.shared.model.TransactionType
 import com.mochiledger.shared.model.WebDavConfig
@@ -291,5 +292,86 @@ class MochiLedgerCoreTest {
         assertEquals("京东自营", imported.merchant)
         assertTrue(imported.note.contains("Type-C快充数据线"))
         assertEquals("cat_shopping", imported.categoryId)
+    }
+
+    @Test
+    fun multiAppNotificationsParseMeituanJdAndBlockPromosOrChats() {
+        val meituan = PaymentMessageParser.parse(
+            packageName = "com.sankuai.meituan",
+            title = "美团外卖",
+            content = "订单支付成功：店铺：肯德基宅急送 商品：香辣鸡腿堡套餐 实付29.90元",
+            rules = rules,
+            accounts = accounts,
+            source = RecordSource.NOTIFICATION_LISTENER,
+            nowMillis = now,
+        )
+        assertNotNull(meituan)
+        assertEquals(PaymentChannel.MEITUAN, meituan.channel)
+        assertEquals(2990L, meituan.amountCents)
+        assertEquals("肯德基宅急送", meituan.merchant)
+        assertEquals("cat_food", meituan.suggestedCategoryId)
+
+        val jd = PaymentMessageParser.parse(
+            packageName = "com.jingdong.app.mall",
+            title = "京东",
+            content = "支付成功：购买商品：Type-C快充数据线 实付款39.90元",
+            rules = rules,
+            accounts = accounts,
+            source = RecordSource.NOTIFICATION_LISTENER,
+            nowMillis = now + 2000,
+        )
+        assertNotNull(jd)
+        assertEquals(PaymentChannel.JINGDONG, jd.channel)
+        assertEquals(3990L, jd.amountCents)
+        assertEquals("cat_shopping", jd.suggestedCategoryId)
+
+        // Promo coupon notification must be ignored
+        val promo = PaymentMessageParser.parse(
+            packageName = "com.sankuai.meituan",
+            title = "美团神券",
+            content = "神券膨胀至18.00元，快去下单支付吧",
+            rules = rules,
+            accounts = accounts,
+            source = RecordSource.NOTIFICATION_LISTENER,
+            nowMillis = now,
+        )
+        assertNull(promo)
+
+        // Real paid order mentioning discount/满减 must NOT be falsely blocked
+        val paidWithDiscount = PaymentMessageParser.parse(
+            packageName = "com.sankuai.meituan",
+            title = "美团外卖",
+            content = "订单支付成功：店铺：麦当劳 实付25.90元（已享满减6元）",
+            rules = rules,
+            accounts = accounts,
+            source = RecordSource.NOTIFICATION_LISTENER,
+            nowMillis = now + 4000,
+        )
+        assertNotNull(paidWithDiscount)
+        assertEquals(2590L, paidWithDiscount.amountCents)
+        assertEquals("麦当劳", paidWithDiscount.merchant)
+
+        // Personal friend chat in WeChat must be ignored
+        val friendChat = PaymentMessageParser.parse(
+            packageName = PaymentChannel.WECHAT.packageName,
+            title = "张三",
+            content = "我刚向老板付款29.90元",
+            rules = rules,
+            accounts = accounts,
+            source = RecordSource.NOTIFICATION_LISTENER,
+            nowMillis = now,
+        )
+        assertNull(friendChat)
+
+        // Cross-app deduplication: WeChat Pay ¥29.90 + Meituan ¥29.90 within 20s must deduplicate
+        assertTrue(
+            PaymentMessageParser.isDuplicate(
+                candidate = meituan,
+                recentType = TransactionType.EXPENSE,
+                recentAmountCents = 2990L,
+                recentTimestamp = now - 3000L,
+                dedupeWindowSeconds = 20,
+            ),
+        )
     }
 }

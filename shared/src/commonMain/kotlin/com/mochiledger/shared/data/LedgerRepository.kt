@@ -363,27 +363,62 @@ class LedgerRepository(
     }
 
     /**
-     * Ingests an auto-tracked payment from LSPosed or NotificationListener with deduplication.
-     * Returns the newly recorded transaction, or null if filtered/deduplicated.
+     * Ingests an auto-tracked payment from LSPosed or NotificationListener with cross-app deduplication
+     * and automatic merchant/detail enrichment when both payment app (e.g. WeChat) and shopping app
+     * (e.g. Meituan / JD) report the same payment within [dedupeWindowSeconds].
      */
     fun recordParsedPayment(parsed: ParsedPayment): LedgerTransaction? {
         val s = _state.value
         val window = s.metadata.autoTrack.dedupeWindowSeconds
-        val duplicate = s.activeTransactions.take(20).any { recent ->
-            val recentChannel = when (recent.source) {
-                RecordSource.WECHAT_LSPOSED -> PaymentChannel.WECHAT
-                RecordSource.ALIPAY_LSPOSED -> PaymentChannel.ALIPAY
-                else -> null
-            }
-            PaymentMessageParser.isDuplicate(
-                candidate = parsed,
-                recentAmountCents = recent.amountCents,
-                recentTimestamp = recent.timestamp,
-                recentChannel = recentChannel,
-                dedupeWindowSeconds = window,
-            )
+        val genericNames = setOf("", "微信支付", "支付宝", "云闪付", "应用通知", "花呗消费")
+
+        val matchedRecent = s.activeTransactions.take(20).firstOrNull { recent ->
+            recent.source != RecordSource.MANUAL &&
+                PaymentMessageParser.isDuplicate(
+                    candidate = parsed,
+                    recentType = recent.type,
+                    recentAmountCents = recent.amountCents,
+                    recentTimestamp = recent.timestamp,
+                    dedupeWindowSeconds = window,
+                )
         }
-        if (duplicate) return null
+        if (matchedRecent != null) {
+            // Enrich existing record if the second notification (e.g., Meituan/JD) carries richer merchant/item details
+            val betterMerchant = if (matchedRecent.merchant in genericNames && parsed.merchant !in genericNames) {
+                parsed.merchant
+            } else {
+                matchedRecent.merchant
+            }
+            val betterCategory = if (
+                (matchedRecent.categoryId == "cat_other_exp" || matchedRecent.categoryId == "cat_other_inc") &&
+                parsed.suggestedCategoryId != null &&
+                parsed.suggestedCategoryId != "cat_other_exp" &&
+                parsed.suggestedCategoryId != "cat_other_inc"
+            ) {
+                parsed.suggestedCategoryId
+            } else {
+                matchedRecent.categoryId
+            }
+            val betterNote = if (
+                parsed.note.isNotBlank() &&
+                !matchedRecent.note.contains(parsed.note) &&
+                parsed.note != parsed.channel.label
+            ) {
+                if (matchedRecent.note in genericNames) parsed.note else "${matchedRecent.note} · ${parsed.note}"
+            } else {
+                matchedRecent.note
+            }
+            if (betterMerchant != matchedRecent.merchant || betterCategory != matchedRecent.categoryId || betterNote != matchedRecent.note) {
+                upsertTransaction(
+                    matchedRecent.copy(
+                        merchant = betterMerchant,
+                        categoryId = betterCategory,
+                        note = betterNote.take(120),
+                    ),
+                )
+            }
+            return null
+        }
 
         val fallbackAccountId = s.activeAccounts.firstOrNull()?.id ?: "acc_cash"
         val fallbackCategoryId = when (parsed.type) {

@@ -31,6 +31,15 @@ enum class RecordSource(val label: String) {
 enum class PaymentChannel(val label: String, val packageName: String) {
     WECHAT("微信支付", "com.tencent.mm"),
     ALIPAY("支付宝", "com.eg.android.AlipayGphone"),
+    UNIONPAY("云闪付", "com.unionpay"),
+    MEITUAN("美团", "com.sankuai.meituan"),
+    JINGDONG("京东", "com.jingdong.app.mall"),
+    TAOBAO("淘宝", "com.taobao.taobao"),
+    PINDUODUO("拼多多", "com.xunmeng.pinduoduo"),
+    ELEME("饿了么", "me.ele"),
+    DIDI("滴滴出行", "com.sdu.didi.psnger"),
+    BANK_SMS("银行通知", "com.android.mms"),
+    OTHER_APP("应用通知", ""),
 }
 
 @Serializable
@@ -127,9 +136,10 @@ data class AutoTrackSettings(
     val useLsposedMode: Boolean = true,
     val hookWeChat: Boolean = true,
     val hookAlipay: Boolean = true,
-    val fallbackNotificationListener: Boolean = false,
+    val fallbackNotificationListener: Boolean = true,
+    val listenOtherApps: Boolean = true,
     val autoConfirm: Boolean = true,
-    val dedupeWindowSeconds: Int = 15,
+    val dedupeWindowSeconds: Int = 20,
     val floatingConfirmEnabled: Boolean = true,
     val floatingConfirmSeconds: Int = 6,
 )
@@ -244,7 +254,7 @@ data class ChangelogEntry(
 )
 
 object AppInfo {
-    const val VERSION_NAME = "1.4.0"
+    const val VERSION_NAME = "1.5.0"
     const val GITHUB_OWNER = "ackd7"
     const val GITHUB_REPO = "MochiLedger"
     const val GITHUB_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO"
@@ -252,6 +262,15 @@ object AppInfo {
     const val RELEASES_LATEST_URL = "https://github.com/$GITHUB_OWNER/$GITHUB_REPO/releases/latest"
 
     val CHANGELOG: List<ChangelogEntry> = listOf(
+        ChangelogEntry(
+            version = "v1.5.0",
+            title = "手动记账自由选时间 · 全应用通知规则记账（美团/京东/云闪付/银行等）· LSPosed 与通知监听协同共开",
+            changes = listOf(
+                "手动记账与编辑账单新增日期+时间选择器（标准星期对齐日历 + 时分精确调节 + 现在/昨天快捷按钮），不再受限于录入时刻",
+                "系统通知监听全面拓展至美团、京东、淘宝、拼多多、饿了么、滴滴、云闪付、银行短信/App 及任意符合分类规则的第三方应用，内置促销/物流防误判过滤",
+                "解除 LSPosed 模式与系统通知监听的互斥限制，支持两者同时开启：LSPosed 深度捕获微信/支付宝收款人，通知监听同步捕获美团/京东等应用订单，跨应用同金额自动去重并互补商品明细",
+            ),
+        ),
         ChangelogEntry(
             version = "v1.4.0",
             title = "Google Calendar 日历选择器 · Android 永久统一签名 · LSPosed 收款人记忆 · 极简扁平钱包图标 · 高星记账规则库",

@@ -24,7 +24,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -91,7 +90,7 @@ fun AutoTrackScreen(
     var newRuleKeyword by remember { mutableStateOf("") }
     var newRuleCategoryId by remember { mutableStateOf("cat_food") }
 
-    // Only check LSPosed permission when LSPosed scheme is enabled; only check NotificationListener when regular scheme is enabled
+    // Only check LSPosed permission when LSPosed scheme is enabled; only check NotificationListener when notification listener is enabled
     val missingPermissionsCount = if (runtime.supportsLsposed) {
         buildList {
             if (settings.useLsposedMode) add(runtime.lsposedActive)
@@ -103,9 +102,6 @@ fun AutoTrackScreen(
     } else {
         0
     }
-
-    val lsposedLockedByRegular = settings.fallbackNotificationListener && !settings.useLsposedMode
-    val regularLockedByLsposed = settings.useLsposedMode && !settings.fallbackNotificationListener
 
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
@@ -119,7 +115,7 @@ fun AutoTrackScreen(
                 Column {
                     SwitchPreference(
                         title = "启用自动记账",
-                        summary = "开启后自动识别微信与支付宝交易",
+                        summary = "开启后自动识别微信、支付宝及多应用订单通知",
                         checked = settings.enabled,
                         onCheckedChange = { onUpdateSettings(settings.copy(enabled = it)) },
                     )
@@ -151,32 +147,17 @@ fun AutoTrackScreen(
             }
         }
 
-        // Scheme 1: Root / LSPosed (mutually exclusive with Regular scheme; grayed & locked when Regular is active)
+        // Scheme 1: Root / LSPosed (can run standalone or alongside Notification Listener)
         item(key = "scheme_lsposed") {
             SmallTitle(text = "Root / LSPosed 方案")
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .alpha(if (lsposedLockedByRegular) 0.48f else 1f),
-            ) {
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     SwitchPreference(
                         title = "启用 LSPosed 监听",
-                        summary = if (lsposedLockedByRegular) {
-                            "已开启常规方案，请先关闭常规方案"
-                        } else {
-                            "支持读取收银台收款人、商品明细与支付页"
-                        },
+                        summary = "深度读取微信/支付宝收银台收款人、商品明细与支付页",
                         checked = settings.useLsposedMode,
-                        enabled = !lsposedLockedByRegular,
                         onCheckedChange = { enable ->
-                            if (lsposedLockedByRegular) return@SwitchPreference
-                            onUpdateSettings(
-                                settings.copy(
-                                    useLsposedMode = enable,
-                                    fallbackNotificationListener = if (enable) false else settings.fallbackNotificationListener,
-                                ),
-                            )
+                            onUpdateSettings(settings.copy(useLsposedMode = enable))
                         },
                     )
                     if (settings.useLsposedMode) {
@@ -198,45 +179,39 @@ fun AutoTrackScreen(
                 }
             }
             Text(
-                text = "提示：不推荐与「常规系统通知监听」同时开启（易重复触发）；可搭配「付款后悬浮确认条」与「官方账单 CSV 补全」一起使用。",
+                text = "提示：可与下方「系统通知监听」同时开启（同笔订单自动去重并互补商品明细），也可搭配悬浮确认条与账单 CSV 补全。",
                 fontSize = 11.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp),
             )
         }
 
-        // Scheme 2: Regular Non-Root Scheme (grayed & locked when LSPosed is active)
+        // Scheme 2: Full-App Notification Listener (supports Meituan, JD, Taobao, UnionPay, Bank SMS & rule-matched apps)
         item(key = "scheme_regular") {
-            SmallTitle(text = "常规方案")
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .alpha(if (regularLockedByLsposed) 0.48f else 1f),
-            ) {
+            SmallTitle(text = "系统通知监听（支持全应用）")
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Column {
                     SwitchPreference(
                         title = "启用系统通知监听",
-                        summary = if (regularLockedByLsposed) {
-                            "已开启 LSPosed 方案，请先关闭 LSPosed"
-                        } else {
-                            "免 Root，通过系统通知栏识别收付款"
-                        },
+                        summary = "免 Root 读取通知记账，支持与 LSPosed 协同开启",
                         checked = settings.fallbackNotificationListener,
-                        enabled = !regularLockedByLsposed,
                         onCheckedChange = { enable ->
-                            if (regularLockedByLsposed) return@SwitchPreference
-                            onUpdateSettings(
-                                settings.copy(
-                                    fallbackNotificationListener = enable,
-                                    useLsposedMode = if (enable) false else settings.useLsposedMode,
-                                ),
-                            )
+                            onUpdateSettings(settings.copy(fallbackNotificationListener = enable))
                         },
                     )
+                    if (settings.fallbackNotificationListener) {
+                        HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp))
+                        SwitchPreference(
+                            title = "拓展监听其他应用",
+                            summary = "识别美团、京东、淘宝、拼多多、云闪付、银行及符合分类规则的应用通知",
+                            checked = settings.listenOtherApps,
+                            onCheckedChange = { onUpdateSettings(settings.copy(listenOtherApps = it)) },
+                        )
+                    }
                 }
             }
             Text(
-                text = "提示：免 Root 设备推荐；不推荐与 LSPosed 模式混用；可搭配「付款后悬浮确认条」及「官方账单 CSV 补全」使用。",
+                text = "提示：自动过滤优惠券、待付款与取餐快递提醒；未知第三方应用仅在命中下方分类规则时入账。",
                 fontSize = 11.sp,
                 color = MiuixTheme.colorScheme.onSurfaceVariantSummary,
                 modifier = Modifier.padding(start = 6.dp, end = 6.dp, top = 6.dp),
@@ -329,6 +304,16 @@ fun AutoTrackScreen(
                             simChannel = PaymentChannel.ALIPAY
                             simTitle = "支付宝交易提醒"
                             simContent = "你已通过花呗向美团外卖付款38.50元"
+                        }
+                        MochiChip("美团订单", simChannel == PaymentChannel.MEITUAN, Color(0xFFFFB000)) {
+                            simChannel = PaymentChannel.MEITUAN
+                            simTitle = "美团外卖"
+                            simContent = "订单支付成功：店铺：肯德基宅急送 商品：香辣鸡腿堡套餐 实付29.90元"
+                        }
+                        MochiChip("京东订单", simChannel == PaymentChannel.JINGDONG, Color(0xFFE1251B)) {
+                            simChannel = PaymentChannel.JINGDONG
+                            simTitle = "京东"
+                            simContent = "支付成功：购买商品：Type-C快充数据线 实付款39.90元（京东白条）"
                         }
                         MochiChip("微信收款", false, MochiColors.Income) {
                             simChannel = PaymentChannel.WECHAT
